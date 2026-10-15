@@ -198,5 +198,6 @@ and [Script Sync](https://create.roblox.com/docs/scripting/sync).
 
 See [BACKUPS.md](BACKUPS.md) for saving milestones, restoring a tagged plugin
 package and keeping separate Roblox place backups. Hover-only plates are implemented
-on `feature/hover-plates` as a test build. The `baseline-before-hover` tag preserves
-the previous implementation, and `main` remains at that baseline pending review.
+on `main` after approval of the test build. The `baseline-before-hover` tag preserves
+the previous implementation. See QA.md for validation limits and the reported
+chest-selection issue, which remains unresolved.

@@ -92,8 +92,8 @@ geometry, names and saved maximum values were not changed by QA.
 
 ## Hover-only test build
 
-- Work is isolated on feature/hover-plates; main and baseline-before-hover remain
-  unchanged. Both local test plugins were installed and reloaded in the existing
+- The feature was developed on feature/hover-plates and approved for main.
+  baseline-before-hover remains unchanged. Both local test plugins were installed and reloaded in the existing
   Studio session, without starting another Studio process or opening another place.
 - Default local preference was true. CoreGui's passive surface measured exactly
   the same size as the active camera viewport, with origin (0,0).
@@ -118,3 +118,9 @@ geometry, names and saved maximum values were not changed by QA.
 - Live dog hover, a full Studio restart, a broad camera sweep and a second Team
   Create editor remain outside this test build's live validation. Existing placement
   tests remain applicable because this change reuses the original attachments/layout.
+
+## Known issue at hover-plates-v1 release
+
+- The user reports being unable to select while hovering over a character chest.
+  This remains unresolved; the earlier successful Groot selection check does not
+  establish selection works over every body part. The cause has not been confirmed.

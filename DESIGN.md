@@ -161,7 +161,7 @@ without scanning the whole map on every combat edit. Only the exact owner's GUI 
 anchors are removed. Legacy orphan recovery uses an anchored rig and validated
 displayed values; Workspace is explicitly excluded despite inheriting Model.
 
-## Hover-only test build
+## Hover-only display
 
 Preserve parchment #C1B6A7, paper #D8CDBB, rust #97372C, ink #382B22 and teal
 #405B5A, with Fondamento names and SourceSans controls. Add one square display-mode
