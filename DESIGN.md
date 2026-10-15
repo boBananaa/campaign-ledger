@@ -160,3 +160,20 @@ Index generated plates by a separate tag, allowing removal to find moved duplica
 without scanning the whole map on every combat edit. Only the exact owner's GUI and
 anchors are removed. Legacy orphan recovery uses an anchored rig and validated
 displayed values; Workspace is explicitly excluded despite inheriting Model.
+
+## Hover-only test build
+
+Preserve parchment #C1B6A7, paper #D8CDBB, rust #97372C, ink #382B22 and teal
+#405B5A, with Fondamento names and SourceSans controls. Add one square display-mode
+button in a general settings row below turn recovery, visible without selecting a
+character. The control reads Hover-only plates: On/Off; player toolbar has Hover
+plates. Keep the current plate layout and avoid added animation or decoration.
+
+A passive local CoreGui viewport surface supplies pointer coordinates. Normalize
+against its rectangle, cast through the current camera and resolve the nearest
+registered ancestor by Instance. Do not activate the plugin mouse or alter selection.
+At 20 Hz, choose local-copy visibility; reconcile templates every 0.2 seconds and on
+registry changes. One local renderer is shared by Ledger and Turn Watch, with failover
+when its plugin unloads. Hover writes only local CoreGui UI and local preferences.
+Saved Workspace plates are disabled templates; their saved visibility flag preserves
+the existing explicit Hide setting. Automatic name changes update cached local names.

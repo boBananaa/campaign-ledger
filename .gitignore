@@ -6,6 +6,7 @@
 __pycache__/
 *.py[cod]
 .identity-runtime-*.luau
+.hover-runtime-*.luau
 
 # Credentials and local settings
 .env

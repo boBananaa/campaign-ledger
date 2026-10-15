@@ -100,8 +100,12 @@ function Panel.new(widget, actions)
  end
  Theme.label(self.turnRow, "Apply when ready. Caps at maximums; 0 skips a resource.", 12, { TextColor3 = C.muted,
   Position = UDim2.fromOffset(0, 227), Size = UDim2.new(1, 0, 0, 17) })
- self.advancedToggle = Theme.button(self.content, "Expand maximums and settings", { LayoutOrder = 6, TextSize = 16 })
- self.advanced = frame(self.content, { LayoutOrder = 7, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 0), Visible = false })
+ local display = frame(self.content, { LayoutOrder = 6, Size = UDim2.new(1, 0, 0, 62) })
+ Theme.label(display, "Display settings for this Studio window", 14, { TextColor3 = C.muted })
+ self.hoverToggle = Theme.button(display, "Hover-only plates: On", { Position = UDim2.fromOffset(0, 27), TextSize = 16 })
+ self.hoverToggle.Activated:Connect(actions.toggleHoverOnly)
+ self.advancedToggle = Theme.button(self.content, "Expand maximums and settings", { LayoutOrder = 7, TextSize = 16 })
+ self.advanced = frame(self.content, { LayoutOrder = 8, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 0), Visible = false })
  stack(self.advanced, 12)
  self.advancedToggle.Activated:Connect(function()
   self.expanded = not self.expanded
@@ -178,6 +182,9 @@ function Panel.new(widget, actions)
  return self
 end
 
+function Panel:updateHoverOnly(value)
+ self.hoverToggle.Text = value and "Hover-only plates: On" or "Hover-only plates: Off"
+end
 function Panel:notify(message, isError)
  self.footer.Text, self.footer.TextColor3 = message, isError and C.hp or C.muted
 end

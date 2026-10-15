@@ -1,12 +1,18 @@
 if not plugin then return end
 local Theme = require(script.Parent.Theme)
 local Turn = require(script.Parent.Turn)
+local Hover = require(script.Parent.Hover)
 local C = Theme.colors
 local shared = game:GetService("ReplicatedStorage")
 local coreGui = game:GetService("CoreGui")
 local toolbar = plugin:CreateToolbar("Campaign Turn Watch")
 local toggle = toolbar:CreateButton("CampaignTurnWatch.Open", "Show or hide combat turn text", "", "Turn Watch")
 toggle.ClickableWhenViewportHidden = true
+local hoverToggle = toolbar:CreateButton("CampaignTurnWatch.Hover", "Show character stats only while hovering", "", "Hover plates")
+hoverToggle.ClickableWhenViewportHidden = true
+local hover = Hover.start(plugin, function(value) hoverToggle:SetActive(value) end)
+hoverToggle:SetActive(hover:getHoverOnly())
+hoverToggle.Click:Connect(function() hover:setHoverOnly(not hover:getHoverOnly()) end)
 local overlayName = "CampaignLedgerTurnOverlay"
 local previous = coreGui:FindFirstChild(overlayName)
 if previous and previous:GetAttribute("CampaignLedgerOwned") then previous:Destroy() end
@@ -32,4 +38,4 @@ end
 local connection = shared:GetAttributeChangedSignal(Turn.attribute):Connect(refresh)
 toggle.Click:Connect(function() visible = not visible; refresh() end)
 refresh()
-plugin.Unloading:Connect(function() connection:Disconnect(); overlay:Destroy(); toolbar:Destroy() end)
+plugin.Unloading:Connect(function() connection:Disconnect(); hover:destroy(); overlay:Destroy(); toolbar:Destroy() end)

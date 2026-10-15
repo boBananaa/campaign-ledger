@@ -6,9 +6,9 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGINS = {
-    "CampaignLedger": (["State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "Plate", "Panel"], "Main"),
+    "CampaignLedger": (["State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "Panel"], "Main"),
     "CampaignD20": (["Theme", "Dice"], "D20Main"),
-    "CampaignTurnWatch": (["Theme", "Turn"], "TurnMain"),
+    "CampaignTurnWatch": (["Theme", "Turn", "HoverRules", "Hover"], "TurnMain"),
 }
 
 def inline_requires(source):
@@ -36,7 +36,7 @@ for name, (modules, entry) in PLUGINS.items():
     ET.ElementTree(roblox).write(out / f"{name}.rbxmx", encoding="utf-8", xml_declaration=True)
     print(f"Built {name}: {len(bundle.splitlines())} lines")
 
-files = [ROOT / "README.md", ROOT / "DESIGN.md", ROOT / "QA.md", ROOT / "BACKUPS.md", ROOT / "scripts/build.py", ROOT / "scripts/test_identity.py",
+files = [ROOT / "README.md", ROOT / "DESIGN.md", ROOT / "QA.md", ROOT / "BACKUPS.md", ROOT / "scripts/build.py", ROOT / "scripts/test_identity.py", ROOT / "scripts/test_hover.py",
          *sorted((ROOT / "src").glob("*.luau")), *sorted((ROOT / "tests").glob("*.luau")),
          ROOT / "tests/Fixture.rbxlx"]
 for name in PLUGINS:

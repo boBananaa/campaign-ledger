@@ -39,6 +39,33 @@ locally. All-character recovery includes every registered character in Workspace
 regardless of roster search, in one undo record. Invalid stats stop the whole batch
 before edits begin.
 
+## Hover-only plates
+
+Stats appear only while the cursor is over a registered character, enabled by
+default for every Studio user. Any queried descendant part, including nested
+accessories, weapons and non-humanoid tokens, resolves to its registered owner.
+Leaving the model or viewport hides the plate. Studio selection and movement
+tools continue to work; the plugin never activates an exclusive mouse tool.
+
+In the DM ledger, scroll to **Display settings for this Studio window** and toggle
+**Hover-only plates: On/Off**. Players can use **Plugins → Campaign Turn Watch →
+Hover plates**. Turning hover-only off shows every permitted plate. The preference
+is saved locally, and both plugins in the same Studio window share that preference.
+Each collaborator has their own cursor and preference. **Hide overhead plate**
+continues to hide that character in either mode.
+
+The saved BillboardGuis are disabled templates with a separate saved visibility
+attribute. The viewer creates local CoreGui copies, using the original attachments
+and geometry; hovering never writes shared Enabled properties or combat state.
+Either the new Ledger or the new Turn Watch provides the viewer. Players must
+install the updated Turn Watch to see these templates. Installing both produces
+one renderer, with takeover when its owning plugin reloads or unloads.
+
+Hover uses a passive viewport surface and camera raycast, sampled at 20 Hz.
+Shared templates are reconciled at most every 0.2 seconds and when added/removed.
+Copies update after stat rebuilds and automatic name changes; removed characters
+lose their local copies. Local UI is removed when the last viewer unloads.
+
 ## Overhead plates and naming
 
 Each registered model has a persistent `CampaignLedgerId` UUID, separate from its
@@ -137,18 +164,25 @@ files, synced Scripts and dist/CampaignLedger.zip. The archive contains the whol
 suite, source, documentation and tests; it excludes logs and temporary lock files.
 
 Run each tests/*.spec.luau using the official Luau CLI, then run
-`python3 scripts/test_identity.py /path/to/luau`. The current set contains
-186 passing checks: 52 resource, 23 name, 75 combat/layout/placement/dice/turn,
-23 identity/ownership and 13 controller/cleanup
+`python3 scripts/test_identity.py /path/to/luau` and
+`python3 scripts/test_hover.py /path/to/luau`. The current set contains
+233 passing checks: 52 resource, 23 name, 75 combat/layout/placement/dice/turn,
+23 identity/ownership, 13 controller/cleanup, 22 hover rules and 25 hover-controller
 checks. These include rotated and translated geometry, off-centre heads, compact
 vertical clearance, custom add/subtract amounts, maximum-only edits, divider limits,
-selection-button padding, advantage/disadvantage manual recovery amounts, skipped resources, health preservation and hiding inactive turns.
+selection-button padding, advantage/disadvantage, manual recovery amounts, skipped
+resources, health preservation and hiding inactive turns.
 All three generated plugin sources compile. Pure rule modules pass static analysis.
 
 The controller regression harness executes the production Main callbacks and Plate
 owner/cleanup functions against a small Studio API fake. It checks both removal
 orders, same-name survivors, cloned IDs, preserved stats, moved/duplicate plates and
 anchor cleanup. The fixture is harness input, not a standalone test or place script.
+
+The hover harness executes the real local controller with deterministic engine API
+fakes. It checks local-only visibility, default and opt-out behavior, same-name
+owners, automatic-name refresh, template replacement, viewport/focus exit,
+preference persistence, shared renderer ownership, takeover and unload cleanup.
 
 Live Studio QA is recorded separately in QA.md. Multi-user replication requires a
 second Team Create editor; a single local window is not evidence of that check.
@@ -163,5 +197,6 @@ and [Script Sync](https://create.roblox.com/docs/scripting/sync).
 ## Versioned backups
 
 See [BACKUPS.md](BACKUPS.md) for saving milestones, restoring a tagged plugin
-package and keeping separate Roblox place backups. Hover-only plates remain
-planned; the baseline tag contains the current implementation.
+package and keeping separate Roblox place backups. Hover-only plates are implemented
+on `feature/hover-plates` as a test build. The `baseline-before-hover` tag preserves
+the previous implementation, and `main` remains at that baseline pending review.

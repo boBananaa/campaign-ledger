@@ -7,7 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 local Plate = {}
 Plate.name = "CampaignLedgerPlate"
 Plate.tag = "CampaignLedgerGeneratedPlate"
-Plate.styleVersion = 7
+Plate.styleVersion = 8
 local C = Theme.colors
 
 -- Convert the design's reference pixels to relative layout once. Roblox handles
@@ -116,7 +116,8 @@ function Plate.recoverState(gui)
 	local name = label and Names.clean(label.Text)
 	if not name then return nil end
 	local state = State.default(name)
-	state.showPlate = gui.Enabled
+	state.showPlate = gui:GetAttribute("CampaignLedgerPlateVisible")
+	if state.showPlate == nil then state.showPlate = gui.Enabled end
 	for _, key in ipairs(State.resources) do
 		local value = gui:FindFirstChild(key .. "Value", true)
 		local current, maximum
@@ -168,9 +169,11 @@ function Plate.render(character, state)
 	local gui = Theme.create("BillboardGui", {
 		Name = Plate.name, Adornee = attachment, Size = UDim2.fromScale(Placement.width, Placement.height),
 		AlwaysOnTop = true, LightInfluence = 0, MaxDistance = 160,
-		Enabled = state.showPlate, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Enabled = false, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, nil)
 	gui:SetAttribute("CampaignLedgerOwned", true)
+	gui:SetAttribute("CampaignLedgerLocalTemplate", true)
+	gui:SetAttribute("CampaignLedgerPlateVisible", state.showPlate)
 	gui:SetAttribute("CampaignLedgerStyleVersion", Plate.styleVersion)
 	gui:SetAttribute(Registry.idAttribute, character:GetAttribute(Registry.idAttribute))
 	local owner = Theme.create("ObjectValue", { Name = "CampaignLedgerOwner", Value = character }, gui)

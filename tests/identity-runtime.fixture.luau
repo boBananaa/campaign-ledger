@@ -75,10 +75,11 @@ local DockWidgetPluginGuiInfo = { new = function() return {} end }
 local Names = { apply = function(_, state) return state end, observe = function() return { Disconnect = function() end } end,
  resolve = function(character) return character.Name end }
 local Turn = { attribute = "CampaignLedgerTurn", view = function(value) return tostring(value) end }
+local Hover = { start = function() return { getHoverOnly = function() return true end, setHoverOnly = function() end, destroy = function() end } end }
 local captured, entries
 local Panel = { new = function(_, actions)
  captured = actions
- return { refresh = function(_, value) entries = value end, notify = function() end, updateTurn = function() end, destroy = function() end }
+ return { refresh = function(_, value) entries = value end, notify = function() end, updateTurn = function() end, updateHoverOnly = function() end, destroy = function() end }
 end }
 local Plate = { name = "CampaignLedgerPlate", tag = "CampaignLedgerGeneratedPlate", styleVersion = 7 }
 -- Renderer is a UI stub; owner resolution and deletion below are copied from production.
