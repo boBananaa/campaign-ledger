@@ -124,3 +124,31 @@ geometry, names and saved maximum values were not changed by QA.
 - The user reports being unable to select while hovering over a character chest.
   This remains unresolved; the earlier successful Groot selection check does not
   establish selection works over every body part. The cause has not been confirmed.
+
+## Parchment UI test build
+
+- Built on `feature/parchment-ui`; the released main branch stays unchanged pending
+  review. A design subagent reviewed palette, hierarchy and narrow-width geometry.
+- The existing 233 automated checks passed; all three generated sources compiled,
+  pure modules passed analysis, and the release archive passed integrity checks.
+- Reloaded all three existing local plugins in the same Studio process through
+  PluginDebugService. Installed sources matched the generated bundles exactly.
+- In native Studio, D20 Normal and Disadvantage clicks produced results and updated
+  history. Resized its floating window to 320 pixels and visually confirmed that
+  all three mode labels, result, breakdown and history fit. Restored its width.
+- Ledger roster selection displayed the ink heading and colored resource meters.
+  Temporarily constrained its local viewport to 330 pixels, set local display text
+  to four-digit values and a long character name, and checked 51 control/numeric
+  text widths against actual engine TextBounds. All fit; the long name truncated
+  cleanly. This checks the content width, not a successful native dock resize.
+- Cloned two generated plate canvases into a temporary local CoreGui preview.
+  Visually checked normal and 9999 / 9999 values at 228 × 116; all text bounds fit.
+  These are canvas checks, not new camera-distance or animal-placement checks.
+- Removed the preview, restored local text/viewport dimensions and selection, and
+  reset UI scroll positions. Three registered characters retained byte-identical
+  combat-state attributes. All 241 captured BaseParts retained their names,
+  parents, sizes and transforms. Each saved plate migrated to style 9 and remained
+  a disabled hover template. No extra Studio session or demo model was created.
+- A native divider drag was not verified by automation. The existing drag callbacks
+  and clamp tests remain in place. No full Studio restart or second Team Create
+  editor was tested. The reported chest-selection issue remains unresolved.

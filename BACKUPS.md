@@ -3,7 +3,8 @@
 This repository backs up Campaign Ledger, Campaign D20 and Campaign Turn Watch.
 The `baseline-before-hover` tag preserves the implementation before the
 hover-only display work. The approved hover display is released as `hover-plates-v1`.
-Check QA.md for validation boundaries and known issues.
+The parchment redesign is isolated on `feature/parchment-ui` for review, with its
+updated test package in `dist/`. Check QA.md for validation boundaries and known issues.
 
 ## Save a milestone
 

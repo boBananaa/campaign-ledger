@@ -11,9 +11,10 @@ character collection. Runtime gameplay and player movement are outside this plug
 
 | Token | Hex | Role |
 | --- | --- | --- |
-| Parchment | #C1B6A7 | Main panel and overhead plates |
-| Paper | #D8CDBB | Inputs and selected surfaces |
-| Dark ink | #382B22 | Primary text |
+| Parchment | #C1B6A7 | Main panel |
+| Paper | #D8CDBB | Buttons and overhead resource surface |
+| Writing field | #E5DBC9 | Editable fields and dice result |
+| Dark ink | #382B22 | Primary text, selected roster row and name bands |
 | Ship red | #97372C | Title, health and selection |
 | Weathered teal | #405B5A | Mana |
 | Walnut | #6A4A2A | Action points |
@@ -23,7 +24,8 @@ grey-beige parchment, rusty red artwork and brown botanical borders. Keep native
 UI surfaces clean rather than adding noisy raster texture beneath small controls.
 Supporting text uses brown ink. Use native Roblox fonts: Fondamento for
 character names and the ledger title; SourceSans / SourceSansSemibold for controls,
-labels and numeric values. Body 16, supporting 14, heading 26, key value 24.
+labels and numeric values. Body 16, supporting 13–14, heading 26, key value 28.
+Current resource values are larger than their adjacent maximums.
 
 Use square edges throughout: panel surfaces, buttons, inputs, roster selections,
 overhead plates, resource bars and AP diamonds. No UICorner instances.
@@ -54,20 +56,25 @@ not a dashboard of identical cards.
 ```
           Campaign Ledger
  [Search characters…                ]
- Aster Vale                  24  8  2
- Rowan Ash                   40  6  3
- [Register selected character       ]
- ------------------------------------
- Aster Vale              [Select model]
- Health          [24] / [36] [Save]
+ Aster Vale     Health 24  Mana 8 AP 2
+ Rowan Ash      Health 40  Mana 6 AP 3
+ [+ Register selected character     ]
+ ────────── divider grip ─────────────
+ ┃ Aster Vale                       ┃
+                       [Select model]
+ Health                      24 / 36
+ ━━━━━━━━━━━━━━━━━━░░░░░░░░░░░░░░░░░
+ Amount [1] [Subtract] [Add]
  [−5] [−1] [+1] [+5]
- Mana             [8] / [14] [Save]
- [−5] [−1] [+1] [+5]
- Actions          [2] / [3]  [Save]
- [Spend 1] [Refund 1] [New turn]
- [Restore all resources]
- ------------------------------------
- Saved: Health 24 → 19
+ (Mana and Actions follow this grid)
+ Party turn
+ [Party turn] [Enemy turn] [End combat]
+ Turn recovery
+ Mana to add            Actions to add
+ [2]                    [1]
+ [Refill selected] [Refill all characters]
+ [Expand maximums and settings       ]
+ [Hover-only plates: On              ]
 ```
 
 ## Review before implementation
@@ -86,7 +93,7 @@ color reinforces labels rather than replacing them. No ambient animation.
    per-character AP reset and restoration. Tests exercise actual rules.
 2. Shared UI helpers and persistent BillboardGui rendering, without external assets.
 3. DockWidgetPluginGui panel: search, selection linking, explicit registration,
-   inline current/maximum editing, quick deltas, readable feedback, unregister.
+   amount-based combat editing, collapsed maximum edits, quick deltas, readable feedback, unregister.
 4. Plugin controller: CollectionService registry and one JSON state attribute on
    each character; newest state is read at action time. Every local character edit
    and its plate are saved in the same ChangeHistoryService recording. External
@@ -177,3 +184,23 @@ registry changes. One local renderer is shared by Ledger and Turn Watch, with fa
 when its plugin unloads. Hover writes only local CoreGui UI and local preferences.
 Saved Workspace plates are disabled templates; their saved visibility flag preserves
 the existing explicit Hide setting. Automatic name changes update cached local names.
+
+## Approved parchment UI direction
+
+The user approved the lighter parchment direction after a design subagent reviewed
+the references. Borrow compact alignment from the plugin reference and character
+framing from the D&D sheet. Avoid turning each resource into another identical card.
+The shared ink name band is the visual signature; small square corner brackets are
+limited to names and the dice result. No gradients, shadows, gold badges, textures,
+taglines, decorative labels or ambient animation.
+
+The roster retains the draggable split. Keep Select model in its own row beneath
+the character name. Keep turn and recovery controls below the resource editor to
+preserve usable roster space at narrow dock widths. Show selected turns and hover
+mode with filled controls plus their existing text labels. Recovery remains manual.
+
+Overhead style 9 uses the same world size, distance limit, attachments, text names,
+exact values and AP pips as style 8. Only surfaces, framing and name contrast change.
+Turn Watch remains top-of-screen text, hidden outside combat. D20 uses a framed
+writing-field result, ink selected mode, rust roll button and wrapping scrollable
+history. All updates use native Roblox GUI instances without downloaded assets.

@@ -21,8 +21,8 @@ local overlay = Theme.create("ScreenGui", { Name = overlayName, Enabled = false,
 	ResetOnSpawn = false, IgnoreGuiInset = false, DisplayOrder = 20,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling })
 overlay:SetAttribute("CampaignLedgerOwned", true)
-local phase = Theme.label(overlay, "", 28, { Name = "CombatTurn", Font = Theme.bold,
-	TextColor3 = C.surface, TextStrokeColor3 = C.text, TextStrokeTransparency = 0.15,
+local phase = Theme.label(overlay, "", 28, { Name = "CombatTurn", Font = Theme.display,
+	TextColor3 = C.field, TextStrokeColor3 = C.text, TextStrokeTransparency = 0.15,
 	TextXAlignment = Enum.TextXAlignment.Center, TextTruncate = Enum.TextTruncate.None,
 	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 16),
 	Size = UDim2.new(1, -32, 0, 40), Active = false, Selectable = false })
