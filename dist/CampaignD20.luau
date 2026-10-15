@@ -6,10 +6,11 @@ local Theme = (function()
 local Theme = {}
 Theme.colors = {
 	base = Color3.fromRGB(193, 182, 167), surface = Color3.fromRGB(216, 205, 187),
-	text = Color3.fromRGB(56, 43, 34), muted = Color3.fromRGB(91, 74, 61),
-	hp = Color3.fromRGB(151, 55, 44), mana = Color3.fromRGB(64, 91, 90),
-	ap = Color3.fromRGB(106, 74, 42), line = Color3.fromRGB(120, 99, 78),
-	track = Color3.fromRGB(159, 145, 124), accent = Color3.fromRGB(151, 55, 44),
+	field = Color3.fromRGB(229, 219, 201), text = Color3.fromRGB(56, 43, 34),
+	muted = Color3.fromRGB(91, 74, 61), hp = Color3.fromRGB(151, 55, 44),
+	mana = Color3.fromRGB(64, 91, 90), ap = Color3.fromRGB(106, 74, 42),
+	line = Color3.fromRGB(120, 99, 78), track = Color3.fromRGB(159, 145, 124),
+	accent = Color3.fromRGB(151, 55, 44),
 }
 Theme.font = Enum.Font.SourceSans
 Theme.bold = Enum.Font.SourceSansSemibold
@@ -27,39 +28,78 @@ function Theme.stroke(parent, color)
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, parent)
 end
 
+function Theme.rule(parent, props)
+	local settings = { Name = "Rule", BackgroundColor3 = Theme.colors.line,
+		BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 1), Active = false, Selectable = false }
+	for key, value in pairs(props or {}) do settings[key] = value end
+	return Theme.create("Frame", settings, parent)
+end
+
+-- Small square corner brackets mark the character sheet and dice result, not every control.
+function Theme.corners(parent, color, length)
+	local size = length or 7
+	for _, corner in ipairs({ { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } }) do
+		local anchor = Vector2.new(corner[1], corner[2])
+		local position = UDim2.fromScale(corner[1], corner[2])
+		Theme.rule(parent, { Name = "CornerHorizontal", BackgroundColor3 = color or Theme.colors.line,
+			AnchorPoint = anchor, Position = position, Size = UDim2.fromOffset(size, 1) })
+		Theme.rule(parent, { Name = "CornerVertical", BackgroundColor3 = color or Theme.colors.line,
+			AnchorPoint = anchor, Position = position, Size = UDim2.fromOffset(1, size) })
+	end
+end
+
 function Theme.label(parent, text, size, props)
 	local settings = { BackgroundTransparency = 1, BorderSizePixel = 0, Text = text,
 		TextColor3 = Theme.colors.text, TextSize = size or 16, Font = Theme.font,
 		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-		Size = UDim2.new(1, 0, 0, 24), RichText = false }
+		Size = UDim2.new(1, 0, 0, 24), RichText = false, Active = false, Selectable = false }
 	for key, value in pairs(props or {}) do settings[key] = value end
 	return Theme.create("TextLabel", settings, parent)
+end
+
+function Theme.select(button, selected, color)
+	button:SetAttribute("ThemeSelected", selected)
+	button:SetAttribute("ThemeSelectedColor", color or Theme.colors.text)
+	button.BackgroundColor3 = selected and (color or Theme.colors.text) or button:GetAttribute("ThemeBackground")
+	button.TextColor3 = selected and Theme.colors.field or button:GetAttribute("ThemeForeground")
+	button:FindFirstChildOfClass("UIStroke").Color = selected and (color or Theme.colors.text) or Theme.colors.line
 end
 
 function Theme.button(parent, text, props)
 	local settings = { BackgroundColor3 = Theme.colors.surface, BorderSizePixel = 0,
 		Text = text, TextColor3 = Theme.colors.text, TextSize = 16, Font = Theme.bold,
-		AutoButtonColor = true, Size = UDim2.new(1, 0, 0, 34), Selectable = true }
+		AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 32), Selectable = true }
 	for key, value in pairs(props or {}) do settings[key] = value end
 	local button = Theme.create("TextButton", settings, parent)
-	Theme.stroke(button)
-	button.SelectionGained:Connect(function() button:FindFirstChildOfClass("UIStroke").Color = Theme.colors.accent end)
-	button.SelectionLost:Connect(function() button:FindFirstChildOfClass("UIStroke").Color = Theme.colors.line end)
+	button:SetAttribute("ThemeBackground", settings.BackgroundColor3)
+	button:SetAttribute("ThemeForeground", settings.TextColor3)
+	local stroke = Theme.stroke(button)
+	local hovered, focused = false, false
+	local function paint()
+		local selected = button:GetAttribute("ThemeSelected")
+		local color = selected and button:GetAttribute("ThemeSelectedColor") or button:GetAttribute("ThemeBackground")
+		button.BackgroundColor3 = hovered and color:Lerp(Theme.colors.text, 0.08) or color
+		stroke.Color = (hovered or focused) and Theme.colors.accent or selected and color or Theme.colors.line
+	end
+	button.MouseEnter:Connect(function() hovered = true; paint() end)
+	button.MouseLeave:Connect(function() hovered = false; paint() end)
+	button.SelectionGained:Connect(function() focused = true; paint() end)
+	button.SelectionLost:Connect(function() focused = false; paint() end)
 	return button
 end
 
 function Theme.input(parent, placeholder, props)
-	local settings = { BackgroundColor3 = Theme.colors.surface, BorderSizePixel = 0,
+	local settings = { BackgroundColor3 = Theme.colors.field, BorderSizePixel = 0,
 		Text = "", PlaceholderText = placeholder, PlaceholderColor3 = Theme.colors.muted,
 		TextColor3 = Theme.colors.text, TextSize = 17, Font = Theme.font,
-		ClearTextOnFocus = false, Size = UDim2.new(1, 0, 0, 34),
+		ClearTextOnFocus = false, Size = UDim2.new(1, 0, 0, 32),
 		TextXAlignment = Enum.TextXAlignment.Left }
 	for key, value in pairs(props or {}) do settings[key] = value end
 	local input = Theme.create("TextBox", settings, parent)
 	local stroke = Theme.stroke(input)
-	Theme.create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, input)
-	input.Focused:Connect(function() stroke.Color = Theme.colors.accent end)
-	input.FocusLost:Connect(function() stroke.Color = Theme.colors.line end)
+	Theme.create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, input)
+	input.Focused:Connect(function() stroke.Color = Theme.colors.accent; stroke.Thickness = 2 end)
+	input.FocusLost:Connect(function() stroke.Color = Theme.colors.line; stroke.Thickness = 1 end)
 	return input
 end
 
@@ -105,46 +145,76 @@ widget.Title = "D20 Roller"
 local viewport = Theme.create("ScrollingFrame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.base,
 	BorderSizePixel = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap, ScrollingDirection = Enum.ScrollingDirection.Y }, widget)
-local root = Theme.create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -4, 0, 560) }, viewport)
-Theme.label(root, "D20 Roller", 28, { Font = Theme.display, TextColor3 = C.accent,
-	Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 0, 35), TextXAlignment = Enum.TextXAlignment.Center })
+local root = Theme.create("Frame", { Name = "D20Roller", BackgroundTransparency = 1,
+	Size = UDim2.new(1, -4, 0, 610) }, viewport)
+Theme.label(root, "D20 Roller", 26, { Font = Theme.display, TextColor3 = C.accent,
+	Position = UDim2.fromOffset(12, 10), Size = UDim2.new(1, -24, 0, 34), TextXAlignment = Enum.TextXAlignment.Center })
+Theme.rule(root, { Position = UDim2.fromOffset(12, 48), Size = UDim2.new(1, -24, 0, 1) })
 local mode, modes = "normal", {}
+local modeGroup = Theme.create("Frame", { BackgroundTransparency = 1, BorderSizePixel = 0,
+	Position = UDim2.fromOffset(12, 64), Size = UDim2.new(1, -24, 0, 32) }, root)
 for index, value in ipairs({ "normal", "advantage", "disadvantage" }) do
 	local label = value:sub(1, 1):upper() .. value:sub(2)
-	local button = Theme.button(root, label, { Position = UDim2.new((index - 1) / 3, 12, 0, 64),
-		Size = UDim2.new(1 / 3, -16, 0, 34), TextSize = 14 })
+	local button = Theme.button(modeGroup, label, { Position = UDim2.new((index - 1) / 3, (index - 1) * 2, 0, 0),
+		Size = UDim2.new(1 / 3, -4, 0, 32), TextSize = 14 })
 	modes[value] = button
 	button.Activated:Connect(function()
 		mode = value
-		for key, other in pairs(modes) do other.TextColor3 = key == mode and C.accent or C.text end
+		for key, other in pairs(modes) do Theme.select(other, key == mode) end
 	end)
 end
-modes.normal.TextColor3 = C.accent
-Theme.label(root, "Modifier", 17, { Position = UDim2.fromOffset(16, 112), Size = UDim2.new(0.5, -16, 0, 30) })
-local modifier = Theme.input(root, "+0", { Text = "0", Position = UDim2.new(0.5, 0, 0, 110), Size = UDim2.new(0.5, -16, 0, 34) })
-local result = Theme.label(root, "—", 80, { Font = Theme.display, TextXAlignment = Enum.TextXAlignment.Center,
-	Position = UDim2.fromOffset(16, 158), Size = UDim2.new(1, -32, 0, 100) })
-local detail = Theme.label(root, "Roll when you’re ready.", 17, { TextWrapped = true,
+Theme.select(modes.normal, true)
+Theme.label(root, "Modifier", 16, { Position = UDim2.fromOffset(12, 109), Size = UDim2.new(1, -112, 0, 32) })
+local modifier = Theme.input(root, "+0", { Name = "Modifier", Text = "0", TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.new(1, -100, 0, 109), Size = UDim2.fromOffset(88, 32) })
+local well = Theme.create("Frame", { Name = "RollResult", BackgroundColor3 = C.field, BorderSizePixel = 0,
+	Position = UDim2.fromOffset(12, 158), Size = UDim2.new(1, -24, 0, 198) }, root)
+Theme.stroke(well)
+Theme.corners(well, C.accent, 12)
+local result = Theme.label(well, "—", 80, { Name = "Total", Font = Theme.bold, TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 98) })
+local detail = Theme.label(well, "Roll when you’re ready.", 16, { Name = "Breakdown", TextWrapped = true,
 	TextTruncate = Enum.TextTruncate.None, TextXAlignment = Enum.TextXAlignment.Center,
-	Position = UDim2.fromOffset(16, 266), Size = UDim2.new(1, -32, 0, 42) })
-local natural = Theme.label(root, "", 18, { Font = Theme.bold, TextColor3 = C.accent,
-	TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(16, 310), Size = UDim2.new(1, -32, 0, 26) })
-local rollButton = Theme.button(root, "Roll D20", { TextColor3 = C.accent,
-	Position = UDim2.fromOffset(16, 346), Size = UDim2.new(1, -32, 0, 40), TextSize = 21 })
-Theme.label(root, "Recent rolls", 16, { Font = Theme.bold, Position = UDim2.fromOffset(16, 400) })
-local history = Theme.label(root, "No rolls yet.", 14, { TextColor3 = C.muted, TextWrapped = true,
-	TextTruncate = Enum.TextTruncate.None, TextYAlignment = Enum.TextYAlignment.Top,
-	Position = UDim2.fromOffset(16, 430), Size = UDim2.new(1, -32, 0, 124) })
+	Position = UDim2.fromOffset(12, 110), Size = UDim2.new(1, -24, 0, 46) })
+local natural = Theme.label(well, "", 18, { Name = "NaturalRoll", Font = Theme.bold, TextColor3 = C.accent,
+	TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(12, 164), Size = UDim2.new(1, -24, 0, 24) })
+local rollButton = Theme.button(root, "Roll D20", { BackgroundColor3 = C.accent, TextColor3 = C.field,
+	Position = UDim2.fromOffset(12, 368), Size = UDim2.new(1, -24, 0, 40), TextSize = 20 })
+Theme.rule(root, { Position = UDim2.fromOffset(12, 428), Size = UDim2.new(1, -24, 0, 1) })
+Theme.label(root, "Recent rolls", 17, { Font = Theme.bold, Position = UDim2.fromOffset(12, 438), Size = UDim2.new(1, -24, 0, 24) })
+local history = Theme.create("ScrollingFrame", { Name = "RollHistory", BackgroundTransparency = 1, BorderSizePixel = 0,
+	Position = UDim2.fromOffset(12, 470), Size = UDim2.new(1, -24, 0, 128), CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+	ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, root)
+Theme.create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, history)
+local historyRows = {}
+local function drawHistory(recent)
+	for _, row in ipairs(historyRows) do row:Destroy() end
+	historyRows = {}
+	if #recent == 0 then
+		table.insert(historyRows, Theme.label(history, "No rolls yet.", 14, { TextColor3 = C.muted }))
+	end
+	for index, value in ipairs(recent) do
+		local row = Theme.label(history, value.mode .. ": " .. Dice.describe(value), 14, {
+			Name = "RecentRoll" .. index, TextColor3 = index == 1 and C.text or C.muted,
+			Font = index == 1 and Theme.bold or Theme.font, TextWrapped = true, TextTruncate = Enum.TextTruncate.None,
+			TextYAlignment = Enum.TextYAlignment.Top, LayoutOrder = index,
+			Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
+		table.insert(historyRows, row)
+	end
+	history.CanvasPosition = Vector2.zero
+end
 local random, recent = Random.new(), {}
+drawHistory(recent)
 local function roll()
 	local value, message = Dice.roll(random, mode, modifier.Text)
 	if not value then detail.Text = message; detail.TextColor3 = C.hp; return end
 	result.Text = tostring(value.total)
 	detail.Text, detail.TextColor3 = Dice.describe(value), C.text
 	natural.Text = value.natural == 20 and "Natural 20" or value.natural == 1 and "Natural 1" or ""
-	table.insert(recent, 1, value.mode .. ": " .. Dice.describe(value))
+	table.insert(recent, 1, value)
 	if #recent > 5 then table.remove(recent) end
-	history.Text = table.concat(recent, "\n")
+	drawHistory(recent)
 end
 rollButton.Activated:Connect(roll)
 modifier.FocusLost:Connect(function(enter) if enter then roll() end end)

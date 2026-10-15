@@ -7,7 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 local Plate = {}
 Plate.name = "CampaignLedgerPlate"
 Plate.tag = "CampaignLedgerGeneratedPlate"
-Plate.styleVersion = 8
+Plate.styleVersion = 9
 local C = Theme.colors
 
 -- Convert the design's reference pixels to relative layout once. Roblox handles
@@ -191,15 +191,16 @@ function Plate.render(character, state)
 		Size = UDim2.fromScale(1, 1), Position = UDim2.fromScale(0.5, 0.5),
 		AnchorPoint = Vector2.new(0.5, 0.5), BorderSizePixel = 0 }, gui)
 	Theme.create("UISizeConstraint", { MinSize = Vector2.zero, MaxSize = Vector2.new(228, 116) }, canvas)
-	local body = Theme.create("Frame", { Name = "Plate", BackgroundColor3 = C.base,
-		BackgroundTransparency = 0.06, BorderSizePixel = 0, Size = UDim2.new(1, -2, 1, -6),
+	local body = Theme.create("Frame", { Name = "Plate", BackgroundColor3 = C.surface,
+		BackgroundTransparency = 0, BorderSizePixel = 0, Size = UDim2.new(1, -2, 1, -6),
 		Position = UDim2.fromOffset(1, 1) }, canvas)
 	Theme.stroke(body, C.line)
-	Theme.create("Frame", { Name = "AccentTab", BackgroundColor3 = C.accent, BorderSizePixel = 0,
-		Position = UDim2.new(0.5, -17, 0, 0), Size = UDim2.fromOffset(34, 2) }, body)
-	Theme.label(body, state.name, 20, { Name = "CharacterName", Font = Theme.display,
-		Position = UDim2.fromOffset(10, 6), Size = UDim2.new(1, -20, 0, 27),
-		TextColor3 = C.accent, TextXAlignment = Enum.TextXAlignment.Center })
+	local nameBand = Theme.create("Frame", { Name = "NameBand", BackgroundColor3 = C.text, BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 32) }, body)
+	Theme.corners(nameBand, C.accent, 7)
+	Theme.label(nameBand, state.name, 20, { Name = "CharacterName", Font = Theme.display,
+		Position = UDim2.fromOffset(8, 2), Size = UDim2.new(1, -16, 0, 27),
+		TextColor3 = C.field, TextXAlignment = Enum.TextXAlignment.Center })
 	for index, key in ipairs({ "hp", "mana" }) do
 		local resource = state[key]
 		local y = 36 + (index - 1) * 25

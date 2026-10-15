@@ -5,7 +5,7 @@ function Layout.split(height, requested)
 	return math.clamp(requested, 200, maximum)
 end
 Layout.editorPadding = 8
-Layout.headingHeight = 70
-Layout.selectButtonTop = 36
+Layout.headingHeight = 74
+Layout.selectButtonTop = 42
 Layout.selectButtonHeight = 30
 return Layout

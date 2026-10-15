@@ -2,6 +2,8 @@
 
 Three independent local plugins for D&D sessions in **Studio edit mode / Team Create**.
 All use the Crew of Northwatch parchment, rust-red and brown palette with square edges.
+The parchment UI test build adds ink character headings, lighter writing fields,
+resource meters and a framed D20 result; it is isolated on `feature/parchment-ui`.
 
 ## Campaign Ledger: DM combat controls
 
@@ -15,7 +17,7 @@ All use the Crew of Northwatch parchment, rust-red and brown palette with square
    maximums, restore resources, rename, tune plate height, rebuild or unregister.
    Increasing a maximum preserves the current amount; lowering it clamps the current
    amount if necessary. Saving a maximum never resubmits a stale current value.
-5. Drag **Drag to resize** between the roster and editor to give either section more
+5. Drag the **three-mark divider grip** between the roster and editor to give either section more
    room. The split is bounded so both remain accessible, and is saved locally.
 
 Select model now occupies its own padded row below the character name, away from
