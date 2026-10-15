@@ -1,0 +1,60 @@
+if not plugin then return end
+local Theme = require(script.Parent.Theme)
+local Dice = require(script.Parent.Dice)
+local C = Theme.colors
+local toolbar = plugin:CreateToolbar("Campaign D20")
+local toggle = toolbar:CreateButton("CampaignD20.Open", "Open the DM's D20 roller", "", "D20 Roller")
+toggle.ClickableWhenViewportHidden = true
+local widget = plugin:CreateDockWidgetPluginGuiAsync("CampaignD20.v1", DockWidgetPluginGuiInfo.new(
+	Enum.InitialDockState.Float, true, false, 380, 590, 320, 320))
+widget.Title = "D20 Roller"
+local viewport = Theme.create("ScrollingFrame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.base,
+	BorderSizePixel = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap, ScrollingDirection = Enum.ScrollingDirection.Y }, widget)
+local root = Theme.create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -4, 0, 560) }, viewport)
+Theme.label(root, "D20 Roller", 28, { Font = Theme.display, TextColor3 = C.accent,
+	Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 0, 35), TextXAlignment = Enum.TextXAlignment.Center })
+local mode, modes = "normal", {}
+for index, value in ipairs({ "normal", "advantage", "disadvantage" }) do
+	local label = value:sub(1, 1):upper() .. value:sub(2)
+	local button = Theme.button(root, label, { Position = UDim2.new((index - 1) / 3, 12, 0, 64),
+		Size = UDim2.new(1 / 3, -16, 0, 34), TextSize = 14 })
+	modes[value] = button
+	button.Activated:Connect(function()
+		mode = value
+		for key, other in pairs(modes) do other.TextColor3 = key == mode and C.accent or C.text end
+	end)
+end
+modes.normal.TextColor3 = C.accent
+Theme.label(root, "Modifier", 17, { Position = UDim2.fromOffset(16, 112), Size = UDim2.new(0.5, -16, 0, 30) })
+local modifier = Theme.input(root, "+0", { Text = "0", Position = UDim2.new(0.5, 0, 0, 110), Size = UDim2.new(0.5, -16, 0, 34) })
+local result = Theme.label(root, "—", 80, { Font = Theme.display, TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromOffset(16, 158), Size = UDim2.new(1, -32, 0, 100) })
+local detail = Theme.label(root, "Roll when you’re ready.", 17, { TextWrapped = true,
+	TextTruncate = Enum.TextTruncate.None, TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromOffset(16, 266), Size = UDim2.new(1, -32, 0, 42) })
+local natural = Theme.label(root, "", 18, { Font = Theme.bold, TextColor3 = C.accent,
+	TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(16, 310), Size = UDim2.new(1, -32, 0, 26) })
+local rollButton = Theme.button(root, "Roll D20", { TextColor3 = C.accent,
+	Position = UDim2.fromOffset(16, 346), Size = UDim2.new(1, -32, 0, 40), TextSize = 21 })
+Theme.label(root, "Recent rolls", 16, { Font = Theme.bold, Position = UDim2.fromOffset(16, 400) })
+local history = Theme.label(root, "No rolls yet.", 14, { TextColor3 = C.muted, TextWrapped = true,
+	TextTruncate = Enum.TextTruncate.None, TextYAlignment = Enum.TextYAlignment.Top,
+	Position = UDim2.fromOffset(16, 430), Size = UDim2.new(1, -32, 0, 124) })
+local random, recent = Random.new(), {}
+local function roll()
+	local value, message = Dice.roll(random, mode, modifier.Text)
+	if not value then detail.Text = message; detail.TextColor3 = C.hp; return end
+	result.Text = tostring(value.total)
+	detail.Text, detail.TextColor3 = Dice.describe(value), C.text
+	natural.Text = value.natural == 20 and "Natural 20" or value.natural == 1 and "Natural 1" or ""
+	table.insert(recent, 1, value.mode .. ": " .. Dice.describe(value))
+	if #recent > 5 then table.remove(recent) end
+	history.Text = table.concat(recent, "\n")
+end
+rollButton.Activated:Connect(roll)
+modifier.FocusLost:Connect(function(enter) if enter then roll() end end)
+toggle.Click:Connect(function() widget.Enabled = not widget.Enabled end)
+widget:GetPropertyChangedSignal("Enabled"):Connect(function() toggle:SetActive(widget.Enabled) end)
+toggle:SetActive(widget.Enabled)
+plugin.Unloading:Connect(function() widget:Destroy(); toolbar:Destroy() end)

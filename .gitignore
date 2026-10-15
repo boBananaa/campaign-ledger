@@ -1,0 +1,18 @@
+# Local operating-system and editor state
+.DS_Store
+**/.DS_Store
+*.lock
+*.log
+__pycache__/
+*.py[cod]
+.identity-runtime-*.luau
+
+# Credentials and local settings
+.env
+.env.*
+!.env.example
+
+# Full places need a separate backup; keep this repository focused on plugins.
+/backups/
+*.rbxl
+# The tiny tests/Fixture.rbxlx is intentionally versioned.
