@@ -16,6 +16,8 @@ local Names = require(script.Parent.Names)
 local Plate = require(script.Parent.Plate)
 local Panel = require(script.Parent.Panel)
 local Turn = require(script.Parent.Turn)
+local Hover = require(script.Parent.Hover)
+local hover
 local Registry = require(script.Parent.Registry)
 local registry = Registry.new(function() return HttpService:GenerateGUID(false) end)
 
@@ -276,6 +278,10 @@ end
 actions.saveDivider = function(value)
 	pcall(function() plugin:SetSetting("CampaignLedgerDivider", value) end)
 end
+actions.getHoverOnly = function() return hover:getHoverOnly() end
+actions.toggleHoverOnly = function()
+ hover:setHoverOnly(not hover:getHoverOnly())
+end
 actions.setTurn = function(side)
 	if side ~= "party" and side ~= "enemy" and side ~= "idle" then return end
 	if transaction("Change combat turn", function() ReplicatedStorage:SetAttribute(Turn.attribute, side) end) then
@@ -365,7 +371,9 @@ local widget = plugin:CreateDockWidgetPluginGuiAsync("CampaignLedger.DM.v1.1", D
 ))
 widget.Title = "Campaign Ledger"
 widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hover = Hover.start(plugin, function(value) if panel then panel:updateHoverOnly(value) end end)
 panel = Panel.new(widget, actions)
+panel:updateHoverOnly(hover:getHoverOnly())
 recoverLegacyPlates()
 panel:updateTurn(ReplicatedStorage:GetAttribute(Turn.attribute))
 connect(ReplicatedStorage:GetAttributeChangedSignal(Turn.attribute), function()
@@ -392,6 +400,7 @@ connect(ChangeHistoryService.OnUndo, scheduleRefresh)
 connect(ChangeHistoryService.OnRedo, scheduleRefresh)
 connect(plugin.Unloading, function()
 	alive = false
+	hover:destroy()
 	for _, connection in ipairs(connections) do connection:Disconnect() end
 	for _, listeners in pairs(observed) do for _, listener in ipairs(listeners) do listener:Disconnect() end end
 	panel:destroy()

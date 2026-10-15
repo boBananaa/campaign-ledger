@@ -489,6 +489,172 @@ return Turn
 
 end)()
 
+local HoverRules = (function()
+-- Pure hit resolution and visibility rules, independent of Roblox services.
+local HoverRules = {}
+function HoverRules.character(target, root, registered)
+ local cursor = target
+ while cursor and cursor ~= root do
+  if registered[cursor] then return cursor end
+  cursor = cursor.Parent
+ end
+ return nil
+end
+function HoverRules.visible(hoverOnly, permitted, owner, hovered)
+ return permitted == true and owner ~= nil and (not hoverOnly or owner == hovered)
+end
+function HoverRules.viewportPoint(x, y, left, top, width, height, viewportWidth, viewportHeight)
+ if width &lt;= 0 or height &lt;= 0 or viewportWidth &lt;= 0 or viewportHeight &lt;= 0 then return nil end
+ local u, v = (x - left) / width, (y - top) / height
+ if u &lt; 0 or v &lt; 0 or u &gt;= 1 or v &gt;= 1 then return nil end
+ return u * viewportWidth, v * viewportHeight
+end
+return HoverRules
+
+end)()
+
+local Hover = (function()
+local Rules = HoverRules
+local Hover = {}
+local ROOT = "CampaignLedgerLocalPlates"
+local SETTING = "CampaignLedgerHoverOnly"
+local TAG = "CampaignLedgerGeneratedPlate"
+local CHARACTER_TAG = "CampaignLedgerCharacter"
+
+function Hover.start(plugin, onChanged)
+ local core = game:GetService("CoreGui")
+ local world = game:GetService("Workspace")
+ local collection = game:GetService("CollectionService")
+ local run = game:GetService("RunService")
+ local input = game:GetService("UserInputService")
+ local ok, saved = pcall(function() return plugin:GetSetting(SETTING) end)
+ local hoverOnly = not (ok and saved == false)
+ local root, owner, sensor, rootConnection
+ local copies, registered, tracked, links = {}, {}, {}, {}
+ local mouseX, mouseY, inside, focused, elapsed = 0, 0, false, true, 0
+ local alive = true
+ local function preferenceChanged()
+  hoverOnly = root:GetAttribute("HoverOnly") ~= false
+  pcall(function() plugin:SetSetting(SETTING, hoverOnly) end)
+  if onChanged then onChanged(hoverOnly) end
+ end
+ local function attach()
+  local current = core:FindFirstChild(ROOT)
+  if current and current:GetAttribute("CampaignLedgerOwned") ~= true then return false end
+  if current then
+   local leader = current:FindFirstChild("OwnerPlugin")
+   if not leader or not leader.Value then current:Destroy(); current = nil end
+  end
+  if not current then
+   current = Instance.new("Folder"); current.Name = ROOT
+   current:SetAttribute("CampaignLedgerOwned", true); current:SetAttribute("HoverOnly", hoverOnly)
+   local reference = Instance.new("ObjectValue"); reference.Name = "OwnerPlugin"; reference.Value = plugin; reference.Parent = current
+   current.Parent = core
+  end
+  if root ~= current then
+   if rootConnection then rootConnection:Disconnect() end
+   root = current
+   owner = root.OwnerPlugin.Value == plugin
+   rootConnection = root:GetAttributeChangedSignal("HoverOnly"):Connect(preferenceChanged)
+   preferenceChanged()
+   if owner then
+    copies, registered, tracked = {}, {}, {}
+    local screen = Instance.new("ScreenGui"); screen.Name = "HoverSurface"
+    screen.IgnoreGuiInset = true; screen.ResetOnSpawn = false; screen.DisplayOrder = -10; screen.Parent = root
+    sensor = Instance.new("Frame"); sensor.Name = "ViewportPointer"
+    sensor.BackgroundTransparency = 1; sensor.BorderSizePixel = 0; sensor.Active = false
+    sensor.Selectable = false; sensor.Size = UDim2.fromScale(1, 1); sensor.Parent = screen
+    local function moved(x, y) mouseX, mouseY, inside = x, y, true end
+    table.insert(links, sensor.MouseEnter:Connect(moved))
+    table.insert(links, sensor.MouseMoved:Connect(moved))
+    table.insert(links, sensor.MouseLeave:Connect(function() inside = false end))
+   end
+  end
+  return owner
+ end
+ local function sync()
+  registered, tracked = {}, {}
+  local present = {}
+  for _, template in ipairs(collection:GetTagged(TAG)) do
+   if template:IsA("BillboardGui") and template:IsDescendantOf(world)
+    and template:GetAttribute("CampaignLedgerLocalTemplate") == true then
+    local reference = template:FindFirstChild("CampaignLedgerOwner")
+    local character = reference and reference.Value
+    if character and character:IsDescendantOf(world) and character:HasTag(CHARACTER_TAG) then
+     registered[character], present[template] = true, true
+     tracked[template] = character
+     local copy = copies[template]
+     if copy then
+      local sourceName = template:FindFirstChild("CharacterName", true)
+      local localName = copy:FindFirstChild("CharacterName", true)
+      if sourceName and localName and sourceName.Text ~= localName.Text then localName.Text = sourceName.Text end
+     end
+    end
+   end
+  end
+  for template, copy in pairs(copies) do
+   if not present[template] then copy:Destroy(); copies[template] = nil end
+  end
+ end
+ local function update()
+  local hovered
+  local camera = world.CurrentCamera
+  if hoverOnly and inside and focused and camera and sensor and sensor.Visible then
+   local pos, size, viewport = sensor.AbsolutePosition, sensor.AbsoluteSize, camera.ViewportSize
+   local x, y = Rules.viewportPoint(mouseX, mouseY, pos.X, pos.Y, size.X, size.Y, viewport.X, viewport.Y)
+   if x then
+    local ray = camera:ViewportPointToRay(x, y)
+    local hit = world:Raycast(ray.Origin, ray.Direction * 10000)
+    hovered = Rules.character(hit and hit.Instance, world, registered)
+   end
+  end
+  for template, character in pairs(tracked) do
+   local visible = Rules.visible(hoverOnly, template:GetAttribute("CampaignLedgerPlateVisible"), character, hovered)
+   local copy = copies[template]
+   if visible and not copy then
+    copy = template:Clone()
+    collection:RemoveTag(copy, TAG)
+    copy.Name = "Character_" .. tostring(character:GetAttribute("CampaignLedgerId"))
+    copy:SetAttribute("CampaignLedgerLocalCopy", true)
+    copy.Enabled = false; copy.Parent = root; copies[template] = copy
+   end
+   if copy then copy.Enabled = visible end
+  end
+ end
+ local dirty, syncElapsed = true, 0
+ table.insert(links, collection:GetInstanceAddedSignal(TAG):Connect(function() dirty = true end))
+ table.insert(links, collection:GetInstanceRemovedSignal(TAG):Connect(function() dirty = true end))
+ table.insert(links, input.WindowFocusReleased:Connect(function() focused = false; inside = false; if owner then update() end end))
+ table.insert(links, input.WindowFocused:Connect(function() focused = true end))
+ table.insert(links, run.Heartbeat:Connect(function(dt)
+  if not alive then return end
+  elapsed += dt; syncElapsed += dt
+  if elapsed &lt; 0.05 then return end
+  elapsed = 0
+  if not attach() then return end
+  if dirty or syncElapsed &gt;= 0.2 then dirty = false; syncElapsed = 0; sync() end
+  update()
+ end))
+ attach()
+ local controller = {}
+ function controller:getHoverOnly() return hoverOnly end
+ function controller:setHoverOnly(value)
+  attach()
+  if root then root:SetAttribute("HoverOnly", value == true) end
+ end
+ function controller:destroy()
+  if not alive then return end
+  alive = false
+  if rootConnection then rootConnection:Disconnect() end
+  for _, link in ipairs(links) do link:Disconnect() end
+  if owner and root and root.Parent then root:Destroy() end
+ end
+ return controller
+end
+return Hover
+
+end)()
+
 local Plate = (function()
 local Theme = Theme
 local Placement = Placement
@@ -499,7 +665,7 @@ local CollectionService = game:GetService("CollectionService")
 local Plate = {}
 Plate.name = "CampaignLedgerPlate"
 Plate.tag = "CampaignLedgerGeneratedPlate"
-Plate.styleVersion = 7
+Plate.styleVersion = 8
 local C = Theme.colors
 
 -- Convert the design's reference pixels to relative layout once. Roblox handles
@@ -608,7 +774,8 @@ function Plate.recoverState(gui)
 	local name = label and Names.clean(label.Text)
 	if not name then return nil end
 	local state = State.default(name)
-	state.showPlate = gui.Enabled
+	state.showPlate = gui:GetAttribute("CampaignLedgerPlateVisible")
+	if state.showPlate == nil then state.showPlate = gui.Enabled end
 	for _, key in ipairs(State.resources) do
 		local value = gui:FindFirstChild(key .. "Value", true)
 		local current, maximum
@@ -660,9 +827,11 @@ function Plate.render(character, state)
 	local gui = Theme.create("BillboardGui", {
 		Name = Plate.name, Adornee = attachment, Size = UDim2.fromScale(Placement.width, Placement.height),
 		AlwaysOnTop = true, LightInfluence = 0, MaxDistance = 160,
-		Enabled = state.showPlate, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Enabled = false, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, nil)
 	gui:SetAttribute("CampaignLedgerOwned", true)
+	gui:SetAttribute("CampaignLedgerLocalTemplate", true)
+	gui:SetAttribute("CampaignLedgerPlateVisible", state.showPlate)
 	gui:SetAttribute("CampaignLedgerStyleVersion", Plate.styleVersion)
 	gui:SetAttribute(Registry.idAttribute, character:GetAttribute(Registry.idAttribute))
 	local owner = Theme.create("ObjectValue", { Name = "CampaignLedgerOwner", Value = character }, gui)
@@ -832,8 +1001,12 @@ function Panel.new(widget, actions)
  end
  Theme.label(self.turnRow, "Apply when ready. Caps at maximums; 0 skips a resource.", 12, { TextColor3 = C.muted,
   Position = UDim2.fromOffset(0, 227), Size = UDim2.new(1, 0, 0, 17) })
- self.advancedToggle = Theme.button(self.content, "Expand maximums and settings", { LayoutOrder = 6, TextSize = 16 })
- self.advanced = frame(self.content, { LayoutOrder = 7, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 0), Visible = false })
+ local display = frame(self.content, { LayoutOrder = 6, Size = UDim2.new(1, 0, 0, 62) })
+ Theme.label(display, "Display settings for this Studio window", 14, { TextColor3 = C.muted })
+ self.hoverToggle = Theme.button(display, "Hover-only plates: On", { Position = UDim2.fromOffset(0, 27), TextSize = 16 })
+ self.hoverToggle.Activated:Connect(actions.toggleHoverOnly)
+ self.advancedToggle = Theme.button(self.content, "Expand maximums and settings", { LayoutOrder = 7, TextSize = 16 })
+ self.advanced = frame(self.content, { LayoutOrder = 8, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 0), Visible = false })
  stack(self.advanced, 12)
  self.advancedToggle.Activated:Connect(function()
   self.expanded = not self.expanded
@@ -910,6 +1083,9 @@ function Panel.new(widget, actions)
  return self
 end
 
+function Panel:updateHoverOnly(value)
+ self.hoverToggle.Text = value and "Hover-only plates: On" or "Hover-only plates: Off"
+end
 function Panel:notify(message, isError)
  self.footer.Text, self.footer.TextColor3 = message, isError and C.hp or C.muted
 end
@@ -998,6 +1174,8 @@ local Names = Names
 local Plate = Plate
 local Panel = Panel
 local Turn = Turn
+local Hover = Hover
+local hover
 local Registry = Registry
 local registry = Registry.new(function() return HttpService:GenerateGUID(false) end)
 
@@ -1258,6 +1436,10 @@ end
 actions.saveDivider = function(value)
 	pcall(function() plugin:SetSetting("CampaignLedgerDivider", value) end)
 end
+actions.getHoverOnly = function() return hover:getHoverOnly() end
+actions.toggleHoverOnly = function()
+ hover:setHoverOnly(not hover:getHoverOnly())
+end
 actions.setTurn = function(side)
 	if side ~= "party" and side ~= "enemy" and side ~= "idle" then return end
 	if transaction("Change combat turn", function() ReplicatedStorage:SetAttribute(Turn.attribute, side) end) then
@@ -1347,7 +1529,9 @@ local widget = plugin:CreateDockWidgetPluginGuiAsync("CampaignLedger.DM.v1.1", D
 ))
 widget.Title = "Campaign Ledger"
 widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hover = Hover.start(plugin, function(value) if panel then panel:updateHoverOnly(value) end end)
 panel = Panel.new(widget, actions)
+panel:updateHoverOnly(hover:getHoverOnly())
 recoverLegacyPlates()
 panel:updateTurn(ReplicatedStorage:GetAttribute(Turn.attribute))
 connect(ReplicatedStorage:GetAttributeChangedSignal(Turn.attribute), function()
@@ -1374,6 +1558,7 @@ connect(ChangeHistoryService.OnUndo, scheduleRefresh)
 connect(ChangeHistoryService.OnRedo, scheduleRefresh)
 connect(plugin.Unloading, function()
 	alive = false
+	hover:destroy()
 	for _, connection in ipairs(connections) do connection:Disconnect() end
 	for _, listeners in pairs(observed) do for _, listener in ipairs(listeners) do listener:Disconnect() end end
 	panel:destroy()

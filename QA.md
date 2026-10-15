@@ -2,9 +2,9 @@
 
 ## Automated checks
 
-186 checks pass with the official Luau CLI: 52 combat-state, 23 name-resolver,
-75 combat/layout/placement/dice/turn, 23 identity/ownership and 13 controller/cleanup
-checks. All three standalone plugins compile.
+233 checks pass with the official Luau CLI: 52 combat-state, 23 name-resolver,
+75 combat/layout/placement/dice/turn, 23 identity/ownership, 13 controller/cleanup,
+22 hover-rule and 25 hover-controller checks. All three standalone plugins compile.
 The pure modules pass static analysis. Archive integrity and bundle/source matching
 are checked by the build workflow.
 
@@ -89,3 +89,38 @@ geometry, names and saved maximum values were not changed by QA.
 - All temporary fixture models and their moved GUI copies were removed. The final
   Studio screenshot shows only the restored Assata entry. No extra Studio session
   was opened. Same-session cloning/recovery is not evidence of multi-user replication.
+
+## Hover-only test build
+
+- The feature was developed on feature/hover-plates and approved for main.
+  baseline-before-hover remains unchanged. Both local test plugins were installed and reloaded in the existing
+  Studio session, without starting another Studio process or opening another place.
+- Default local preference was true. CoreGui's passive surface measured exactly
+  the same size as the active camera viewport, with origin (0,0).
+- Hovering the registered Groot character visibly revealed its stats. Normal
+  Studio selection still selected the character; no exclusive plugin activation
+  is used. Moving the pointer into Explorer hid the stats even while selected.
+- Both new plugins were loaded, then the original owner plugin was reloaded. The
+  remaining player plugin took over the local renderer successfully.
+- Opt-out was checked through the local preference API: three registered
+  characters produced exactly three enabled local plates. All shared templates
+  stayed disabled and every captured combat-state attribute stayed identical.
+  The renderer's saved plugin preference was false, confirming persistence.
+- Default hover-only preference was restored to true afterward, hiding the plates
+  with the cursor outside the viewport. No character stats or geometry were changed.
+- The native Plugins submenu produced stale accessibility responses, so its button
+  click was not verified. Toggle handlers compile; behavior and same-window
+  preference synchronization are covered by the production-controller harness.
+- The harness also covers nested parts/accessories, duplicate names, non-humanoid
+  targets, camera/model hit changes with a stationary cursor, focus loss, explicit
+  hidden plates, automatic-name updates, replaced templates, unregister cleanup,
+  preference restart, renderer takeover and final unload cleanup.
+- Live dog hover, a full Studio restart, a broad camera sweep and a second Team
+  Create editor remain outside this test build's live validation. Existing placement
+  tests remain applicable because this change reuses the original attachments/layout.
+
+## Known issue at hover-plates-v1 release
+
+- The user reports being unable to select while hovering over a character chest.
+  This remains unresolved; the earlier successful Groot selection check does not
+  establish selection works over every body part. The cause has not been confirmed.
