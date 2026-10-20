@@ -37,6 +37,7 @@ for name, (modules, entry) in PLUGINS.items():
     print(f"Built {name}: {len(bundle.splitlines())} lines")
 
 files = [ROOT / "README.md", ROOT / "DESIGN.md", ROOT / "QA.md", ROOT / "BACKUPS.md", ROOT / "scripts/build.py", ROOT / "scripts/test_identity.py", ROOT / "scripts/test_hover.py",
+         *sorted((ROOT / "docs").rglob("*.md")),
          *sorted((ROOT / "src").glob("*.luau")), *sorted((ROOT / "tests").glob("*.luau")),
          ROOT / "tests/Fixture.rbxlx"]
 for name in PLUGINS:
