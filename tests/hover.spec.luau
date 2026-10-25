@@ -16,6 +16,9 @@ check(Rules.character({ Parent = second }, root, registered) == second, "duplica
 check(Rules.character(nil, root, registered) == nil, "empty sky hides plate")
 check(Rules.character({ Parent = root }, root, registered) == nil, "terrain and unregistered objects hide plate")
 check(Rules.character(root, root, { [root] = true }) == nil, "Workspace never a character")
+registered[head] = true
+check(Rules.character(head, root, registered) == first, "overlapping body-part registration resolves one outer character")
+registered[head] = nil
 check(Rules.visible(true, true, first, first), "hovered owner shows")
 check(not Rules.visible(true, true, first, second), "same-name neighbour stays hidden")
 check(not Rules.visible(true, true, first, nil), "leaving character hides")
@@ -32,6 +35,11 @@ check(Rules.viewportPoint(250, 270, 50, 70, 400, 200, 800, 400) == nil, "bottom 
 check(Rules.viewportPoint(0, 170, 50, 70, 400, 200, 800, 400) == nil, "outside viewport rejected")
 check(Rules.viewportPoint(250, 170, 50, 70, 0, 200, 800, 400) == nil, "unlaid-out sensor rejected")
 check(Rules.viewportPoint(250, 170, 50, 70, 400, 200, 0, 400) == nil, "missing camera viewport rejected")
+local function template(id)
+ return { GetAttribute = function() return id end }
+end
+check(Rules.prefer(template("a"), template("z")) and not Rules.prefer(template("z"), template("a")), "replication order cannot change keyed duplicate winner")
+check(Rules.prefer(template("a"),template(nil)), "keyed template preferred over unkeyed legacy duplicate")
 registered[first] = nil
 check(Rules.character(weapon, root, registered) == nil, "removed character no longer hovered")
 print("PASS: " .. count .. " hover hit and visibility checks")

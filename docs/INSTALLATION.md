@@ -69,6 +69,7 @@ Reload Plugin** with stale in-memory source; it can overwrite the new disk copy.
 - **DM controls off** removes DM content and closes both DM menus; player features stay active.
 - In the launcher, **Turn text** hides/shows the local turn notice; **End combat** in Ledger hides it for everyone.
 - **Hover-only** in the launcher changes the local stats display preference.
+- **Stat plates: Off** hides all plugin overhead displays locally, even on hover. It preserves character data and the hover-only preference.
 - **Disable D&D in this world** deactivates campaign sessions for installed collaborators, preserving stats. The launcher stays available for re-enabling.
 - To disable the entire combined plugin locally, move its file outside Plugins and reopen Studio.
 

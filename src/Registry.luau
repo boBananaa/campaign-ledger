@@ -38,6 +38,16 @@ function Registry:plan(characters)
 end
 
 function Registry.character(candidate)
+	-- A selected limb/accessory belongs to its containing rig, not a second token.
+	local cursor, containingModel = candidate, nil
+	while cursor and not cursor:IsA("Workspace") do
+		if cursor:IsA("Model") then
+			containingModel = containingModel or cursor
+			if cursor:FindFirstChildOfClass("Humanoid") then return cursor end
+		end
+		cursor = cursor.Parent
+	end
+	if candidate:IsA("BasePart") and containingModel then candidate = containingModel end
 	if not candidate:IsA("Model") then return candidate end
 	local humanoid
 	for _, object in ipairs(candidate:GetDescendants()) do
@@ -51,6 +61,15 @@ function Registry.character(candidate)
 	return candidate
 end
 
+function Registry.registeredAncestor(candidate, root)
+	local result, cursor = nil, candidate
+	while cursor and cursor ~= root do
+		if cursor:HasTag(Registry.tag) then result = cursor end
+		cursor = cursor.Parent
+	end
+	return result
+end
+
 function Registry.plateOwner(gui, root)
 	local reference = gui:FindFirstChild("CampaignLedgerOwner")
 	if reference and reference:IsA("ObjectValue") and reference.Value and reference.Value ~= root then return reference.Value end
@@ -58,7 +77,7 @@ function Registry.plateOwner(gui, root)
 	if parent and parent ~= root and (parent:IsA("Model") or parent:IsA("BasePart")) then return parent end
 	local cursor = gui.Adornee
 	while cursor and cursor ~= root do
-		if cursor:HasTag(Registry.tag) then return cursor end
+		if cursor:HasTag(Registry.tag) then return Registry.registeredAncestor(cursor, root) end
 		if cursor:IsA("Model") and cursor:FindFirstChildOfClass("Humanoid") then return cursor end
 		cursor = cursor.Parent
 	end

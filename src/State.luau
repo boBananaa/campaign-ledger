@@ -15,9 +15,9 @@ end
 function State.default(name)
 	return {
 		version = 1, name = name, showPlate = true, autoName = true, plateOffset = 0,
-		hp = { current = 30, maximum = 30 },
-		mana = { current = 12, maximum = 12 },
-		ap = { current = 3, maximum = 3 },
+		hp = { current = 100, maximum = 100 },
+		mana = { current = 125, maximum = 125 },
+		ap = { current = 6, maximum = 6 },
 	}
 end
 
@@ -92,7 +92,7 @@ end
 
 function State.setMaximum(state, key, maximum)
 	if not State.labels[key] then return nil, "Unknown resource." end
-	return State.setResource(state, key, state[key].current, maximum)
+	return State.setResource(state, key, maximum, maximum)
 end
 
 function State.shiftPlate(state, delta)

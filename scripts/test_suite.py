@@ -61,7 +61,7 @@ local CollectionService=collection
 '''
 # Use production plate identity helpers so a temporary character remains realistic.
 plate=(root/'src/Plate.luau').read_text()
-for name in ['get','owner','clear']:
+for name in ['list','get','owner','clearAnchors','clear','prune']:
     match=re.search(rf'^function Plate\.{name}\(.*?(?=^function |^return Plate)',plate,re.M|re.S)
     preamble+='\n'+match.group()
 for module in ['Turn','WorldScope','HoverRules','Hover','LedgerSession','DiceSession','ViewerSession']:
@@ -86,6 +86,10 @@ template(playerCharacter)
 currentHit=playerCharacter.Head;sensor().MouseMoved:Fire(100,100);step()
 check(shown() == 1, "player sees hovered stats without enabling DM controls")
 check(playerCharacter:GetAttribute("CampaignLedgerState")==stats, "default player viewer preserves character stats")
+action("togglePlates")
+check(shown()==0 and launcherState.platesVisible==false, "launcher master switch hides every character plate")
+check(core:FindFirstChild("CampaignLedgerTurnOverlay").Enabled, "hiding stat plates leaves turn notice running")
+action("togglePlates");check(shown()==1 and launcherState.platesVisible, "launcher restores hovered plate independently of DM role")
 currentHit=nil;playerCharacter:Destroy();step()
 local viewerSensor=sensor()
 action("toggleDM")

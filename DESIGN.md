@@ -184,7 +184,7 @@ plates. Keep the current plate layout and avoid added animation or decoration.
 A passive local CoreGui viewport surface supplies pointer coordinates. Normalize
 against its rectangle, cast through the current camera and resolve the nearest
 registered ancestor by Instance. Do not activate the plugin mouse or alter selection.
-At 20 Hz, choose local-copy visibility; reconcile templates every 0.2 seconds and on
+At up to 60 Hz, choose local-copy visibility; reconcile templates every 0.2 seconds and on
 registry changes. One local renderer is shared by Ledger and Turn Watch, with failover
 when its plugin unloads. Hover writes only local CoreGui UI and local preferences.
 Saved Workspace plates are disabled templates; their saved visibility flag preserves
@@ -292,3 +292,23 @@ leaves player features running. Session controllers expose opens and preferences
 without creating individual toolbars in the combined build; standalone variants
 keep their existing controls. Role/world toggles reuse native IDs and never
 automatically reopen a DM menu.
+
+## Session fixes and saved-data compatibility
+
+The launcher adds an independent Stat plates on/off control above the turn and
+hover-only switches. Its minimum content height is 460px. Hiding plates is local
+and remembered, preserves hover mode, and leaves turn text and model names alone.
+
+Movement bases stay usable for native Studio picking, but hovering their empty
+surface cannot reveal stats. Thin horizontal stands at the bottom of multi-part
+figures are recognized without renaming or changing authored parts. Visible body
+hits reveal stats; transparent helpers cannot intercept the ray.
+
+Each model displays one canonical generated plate. A shared unique plate key
+allows collaborators to converge on the same duplicate winner. Legacy nested
+registrations are suppressed without deleting stored values. Style 12 adds the
+plate identity key while keeping the established appearance and placement.
+
+New registrations start full at 100 Health, 125 Mana and 6 AP. Existing version-1
+state loads as-is. Saving a maximum explicitly refills that resource only, using
+the current saved state for all other fields.

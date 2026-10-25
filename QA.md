@@ -2,12 +2,45 @@
 
 ## Automated checks
 
-473 checks pass with the official Luau CLI: 52 combat-state, 23 name-resolver,
-171 combat/layout/placement/dice/turn, 23 identity/ownership, 17 controller/cleanup,
-22 hover-rule, 30 hover-controller, 43 UI workflow/layout, 50 world-isolation/bootstrap
-and 42 combined-suite checks. All four generated plugins compile.
+517 checks pass with the official Luau CLI: 54 combat-state, 23 name-resolver,
+174 combat/layout/placement/dice/turn, 25 identity/ownership, 28 controller/cleanup,
+25 hover-rule, 48 hover-controller, 45 UI workflow/layout, 50 world-isolation/bootstrap
+and 45 combined-suite checks. All four generated plugins compile.
 The pure modules pass static analysis. Archive integrity and bundle/source matching
 are checked by the build workflow.
+
+## Session fixes · 2026-10-24
+
+- New registrations start full at 100 Health, 125 Mana and 6 AP. Saving a maximum
+  fills only that resource. Schema version, character attributes, ID format and
+  existing saved values remain compatible; updating does not require registration.
+- Added the local, remembered Stat plates on/off switch. It overrides hover and
+  all-plates mode, without changing other users' settings, model names or turn text.
+- Hover now reads the current pointer, updates up to 60 Hz, skips invisible helper
+  geometry and keeps opaque occlusion. Flat movement bases do not activate stats;
+  their picking/physics properties remain untouched. Custom handles can opt out
+  through the boolean CampaignLedgerIgnoreHover attribute.
+- The exact reported duplicate incident was already removed. Source inspection
+  found that the viewer rendered every duplicate template and that first-time limb
+  selection could register a separate body part. Simulated same-owner duplicate
+  arrivals reproduce the stacking path; the viewer now chooses one template.
+  Ledger also prunes duplicate generated plates using a shared unique plate key,
+  canonicalizes limb registration and rechecks stored data at the write boundary.
+  Nested legacy registrations are hidden from the active roster/viewer/recovery
+  without deleting their state or identity. Different same-name models remain distinct.
+- Production-code regression checks cover all of the above, exact saved-state byte
+  preservation, old 30/12/3 maxima, repeated registration, a registration arriving at
+  the transaction boundary, master visibility persistence, invisible/opaque hits,
+  current pointer coordinates and movement-base exclusion.
+- Read-only inspection of the running place 100676013921656 found two registrations
+  with one saved template each. Running the pure detection rule identified only
+  Workspace.Lisa.Part as a movement base. No live models, stats, plugins, selection,
+  Script Sync files or world settings were changed. No extra Studio was opened.
+- Full new-build native hover/click testing and simultaneous Team Create editor
+  replication remain pending. This is not a distributed lock for concurrent stat
+  edits. Publish/reload this build when the session is ready for the update.
+- The new master switch was inspected in the offline minimum-size launcher
+  rendering; engine text metrics and native clicks were not tested for this build.
 
 ## Single-button launcher revision · 2026-10-24
 

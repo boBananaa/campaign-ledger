@@ -166,7 +166,7 @@ function Panel.new(widget, actions)
  Theme.button(self.advanced, "Rebuild overhead plate", { LayoutOrder = 9, TextSize = 15 }).Activated:Connect(actions.rebuild)
  Theme.button(self.advanced, "Remove from ledger", { LayoutOrder = 10, TextSize = 15,
   TextColor3 = C.muted }).Activated:Connect(actions.remove)
- Theme.label(self.advanced, "Lowering a maximum clamps the current value. Studio Undo reverts edits.", 14, {
+ Theme.label(self.advanced, "Saving a maximum refills that resource. Studio Undo reverts edits.", 14, {
   LayoutOrder = 11, TextColor3 = C.muted, TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Size = UDim2.new(1, 0, 0, 42) })
  self.hoverToggle = Theme.button(self.root, "Hover plates: On", { Name = "HoverPreference", BackgroundColor3 = C.shell,
   TextColor3 = C.light, Position = UDim2.new(0, 12, 1, -60), Size = UDim2.new(1, -24, 0, 26), TextSize = 14 })

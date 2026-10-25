@@ -7,7 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 local Plate = {}
 Plate.name = "CampaignLedgerPlate"
 Plate.tag = "CampaignLedgerGeneratedPlate"
-Plate.styleVersion = 11
+Plate.styleVersion = 12
 local C = Theme.colors
 
 -- Convert the design's reference pixels to relative layout once. Roblox handles
@@ -99,12 +99,28 @@ local function existingNameTop(character, bounds)
 	return highest
 end
 
-function Plate.get(character)
-	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("BillboardGui") and child.Name == Plate.name
-			and child:GetAttribute("CampaignLedgerOwned") == true then return child end
+function Plate.list(character)
+	local result, seen = {}, {}
+	local candidates = CollectionService:GetTagged(Plate.tag)
+	for _, child in ipairs(character:GetDescendants()) do
+		if child:IsA("BillboardGui") then table.insert(candidates, child) end
 	end
-	return nil
+	for _, gui in ipairs(candidates) do
+		if not seen[gui] and gui:IsA("BillboardGui") and gui.Name == Plate.name
+			and gui:GetAttribute("CampaignLedgerOwned") == true and Plate.owner(gui) == character then
+			seen[gui] = true; table.insert(result, gui)
+		end
+	end
+	return result
+end
+
+function Plate.get(character)
+	local primary
+	for _, gui in ipairs(Plate.list(character)) do
+		local id, previous = gui:GetAttribute("CampaignLedgerPlateId"), primary and primary:GetAttribute("CampaignLedgerPlateId")
+		if not primary or (type(id) == "string" and (type(previous) ~= "string" or id < previous)) then primary = gui end
+	end
+	return primary
 end
 
 function Plate.owner(gui)
@@ -128,27 +144,29 @@ function Plate.recoverState(gui)
 	return State.validate(state) and state or nil
 end
 
-function Plate.clear(character)
-	local candidates = CollectionService:GetTagged(Plate.tag)
-	for _, object in ipairs(character:GetDescendants()) do
-		if object:IsA("BillboardGui") then table.insert(candidates, object) end
-	end
-	local removed = {}
-	for _, gui in ipairs(candidates) do
-		if not removed[gui] and gui:IsA("BillboardGui") and gui.Name == Plate.name
-			and gui:GetAttribute("CampaignLedgerOwned") == true and Plate.owner(gui) == character then
-			removed[gui] = true
-			gui:Destroy()
-		end
-	end
+function Plate.clearAnchors(character, keep)
 	for _, object in ipairs(character:GetDescendants()) do
 		if object:IsA("Attachment") and object.Name == "CampaignLedgerAnchor"
-			and object:GetAttribute("CampaignLedgerOwned") == true then
+			and object:GetAttribute("CampaignLedgerOwned") == true and object ~= keep then
 			local cursor = object.Parent
 			while cursor and cursor ~= character and not cursor:HasTag(Registry.tag) do cursor = cursor.Parent end
 			if cursor == character then object:Destroy() end
 		end
 	end
+end
+
+function Plate.clear(character)
+	for _, gui in ipairs(Plate.list(character)) do gui:Destroy() end
+	Plate.clearAnchors(character)
+end
+
+function Plate.prune(character)
+	local primary = Plate.get(character)
+	-- New complete plates have a shared unique key. Every editor keeps the same
+	-- winner even when concurrent Team Create edits arrive in a different order.
+	if not primary or type(primary:GetAttribute("CampaignLedgerPlateId")) ~= "string" then return end
+	for _, gui in ipairs(Plate.list(character)) do if gui ~= primary then gui:Destroy() end end
+	Plate.clearAnchors(character, primary.Adornee)
 end
 
 function Plate.render(character, state)
@@ -172,6 +190,7 @@ function Plate.render(character, state)
 		Enabled = false, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, nil)
 	gui:SetAttribute("CampaignLedgerOwned", true)
+	gui:SetAttribute("CampaignLedgerPlateId", game:GetService("HttpService"):GenerateGUID(false))
 	gui:SetAttribute("CampaignLedgerLocalTemplate", true)
 	gui:SetAttribute("CampaignLedgerPlateVisible", state.showPlate)
 	gui:SetAttribute("CampaignLedgerStyleVersion", Plate.styleVersion)

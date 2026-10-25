@@ -153,9 +153,9 @@ end
 function State.default(name)
 	return {
 		version = 1, name = name, showPlate = true, autoName = true, plateOffset = 0,
-		hp = { current = 30, maximum = 30 },
-		mana = { current = 12, maximum = 12 },
-		ap = { current = 3, maximum = 3 },
+		hp = { current = 100, maximum = 100 },
+		mana = { current = 125, maximum = 125 },
+		ap = { current = 6, maximum = 6 },
 	}
 end
 
@@ -230,7 +230,7 @@ end
 
 function State.setMaximum(state, key, maximum)
 	if not State.labels[key] then return nil, "Unknown resource." end
-	return State.setResource(state, key, state[key].current, maximum)
+	return State.setResource(state, key, maximum, maximum)
 end
 
 function State.shiftPlate(state, delta)
@@ -460,6 +460,16 @@ function Registry:plan(characters)
 end
 
 function Registry.character(candidate)
+	-- A selected limb/accessory belongs to its containing rig, not a second token.
+	local cursor, containingModel = candidate, nil
+	while cursor and not cursor:IsA("Workspace") do
+		if cursor:IsA("Model") then
+			containingModel = containingModel or cursor
+			if cursor:FindFirstChildOfClass("Humanoid") then return cursor end
+		end
+		cursor = cursor.Parent
+	end
+	if candidate:IsA("BasePart") and containingModel then candidate = containingModel end
 	if not candidate:IsA("Model") then return candidate end
 	local humanoid
 	for _, object in ipairs(candidate:GetDescendants()) do
@@ -473,6 +483,15 @@ function Registry.character(candidate)
 	return candidate
 end
 
+function Registry.registeredAncestor(candidate, root)
+	local result, cursor = nil, candidate
+	while cursor and cursor ~= root do
+		if cursor:HasTag(Registry.tag) then result = cursor end
+		cursor = cursor.Parent
+	end
+	return result
+end
+
 function Registry.plateOwner(gui, root)
 	local reference = gui:FindFirstChild("CampaignLedgerOwner")
 	if reference and reference:IsA("ObjectValue") and reference.Value and reference.Value ~= root then return reference.Value end
@@ -480,7 +499,7 @@ function Registry.plateOwner(gui, root)
 	if parent and parent ~= root and (parent:IsA("Model") or parent:IsA("BasePart")) then return parent end
 	local cursor = gui.Adornee
 	while cursor and cursor ~= root do
-		if cursor:HasTag(Registry.tag) then return cursor end
+		if cursor:HasTag(Registry.tag) then return Registry.registeredAncestor(cursor, root) end
 		if cursor:IsA("Model") and cursor:FindFirstChildOfClass("Humanoid") then return cursor end
 		cursor = cursor.Parent
 	end
@@ -710,12 +729,47 @@ local HoverRules = (function()
 -- Pure hit resolution and visibility rules, independent of Roblox services.
 local HoverRules = {}
 function HoverRules.character(target, root, registered)
- local cursor = target
+ local cursor, result = target, nil
  while cursor and cursor ~= root do
-  if registered[cursor] then return cursor end
+  if registered[cursor] then result = cursor end
   cursor = cursor.Parent
  end
- return nil
+ return result
+end
+
+function HoverRules.prefer(candidate, current)
+ if not current then return true end
+ local a = candidate:GetAttribute("CampaignLedgerPlateId")
+ local b = current:GetAttribute("CampaignLedgerPlateId")
+ return type(a) == "string" and (type(b) ~= "string" or a < b)
+end
+
+function HoverRules.skipHit(part)
+ return part and part:IsA("BasePart") and ((part.Transparency or 0) >= 0.95 or (part.LocalTransparencyModifier or 0) >= 0.95)
+end
+
+function HoverRules.movementBase(part, character)
+ if not part:IsA("BasePart") then return false end
+ local cursor = part
+ while cursor and cursor ~= character do
+  local override = cursor:GetAttribute("CampaignLedgerIgnoreHover")
+  if type(override) == "boolean" then return override end
+  cursor = cursor.Parent
+ end
+ -- A stand is a very thin, horizontal part below the rest of a multi-part
+ -- figure. Never infer this for a standalone flat token or a body accessory.
+ if not character:IsA("Model") or part.Parent ~= character or not part.Size or not part.CFrame then return false end
+ local size, frame = part.Size, part.CFrame
+ local height = math.abs(frame.RightVector.Y) * size.X + math.abs(frame.UpVector.Y) * size.Y + math.abs(frame.LookVector.Y) * size.Z
+ if height > math.max(size.X, size.Y, size.Z) * 0.12 then return false end
+ local above = false
+ for _, other in ipairs(character:GetDescendants()) do
+  if other ~= part and other:IsA("BasePart") and other.Transparency < 0.95 then
+   if other.Position.Y < part.Position.Y then return false end
+   if other.Position.Y > part.Position.Y + height then above = true end
+  end
+ end
+ return above
 end
 function HoverRules.visible(hoverOnly, permitted, owner, hovered)
  return permitted == true and owner ~= nil and (not hoverOnly or owner == hovered)
@@ -735,6 +789,7 @@ local Rules = HoverRules
 local Hover = {}
 local ROOT = "CampaignLedgerLocalPlates"
 local SETTING = "CampaignLedgerHoverOnly"
+local VISIBLE_SETTING = "CampaignLedgerPlatesVisible"
 local TAG = "CampaignLedgerGeneratedPlate"
 local CHARACTER_TAG = "CampaignLedgerCharacter"
 
@@ -746,14 +801,23 @@ local function createController(plugin, onChanged)
  local input = game:GetService("UserInputService")
  local ok, saved = pcall(function() return plugin:GetSetting(SETTING) end)
  local hoverOnly = not (ok and saved == false)
+ local visibleOK, savedVisible = pcall(function() return plugin:GetSetting(VISIBLE_SETTING) end)
+ local platesVisible = not (visibleOK and savedVisible == false)
  local root, owner, sensor, rootConnection
- local copies, registered, tracked, links = {}, {}, {}, {}
+ local copies, registered, tracked, links, movementBases = {}, {}, {}, {}, {}
  local mouseX, mouseY, inside, focused, elapsed = 0, 0, false, true, 0
  local alive = true
+ local update
+ local rayParams = RaycastParams.new()
+ rayParams.FilterType = Enum.RaycastFilterType.Exclude
+ rayParams.IgnoreWater = true
  local function preferenceChanged()
   hoverOnly = root:GetAttribute("HoverOnly") ~= false
+  platesVisible = root:GetAttribute("PlatesVisible") ~= false
   pcall(function() plugin:SetSetting(SETTING, hoverOnly) end)
+  pcall(function() plugin:SetSetting(VISIBLE_SETTING, platesVisible) end)
   if onChanged then onChanged(hoverOnly) end
+  if owner and update then update() end
  end
  local function attach()
   local current = core:FindFirstChild(ROOT)
@@ -765,14 +829,18 @@ local function createController(plugin, onChanged)
   if not current then
    current = Instance.new("Folder"); current.Name = ROOT
    current:SetAttribute("CampaignLedgerOwned", true); current:SetAttribute("HoverOnly", hoverOnly)
+   current:SetAttribute("PlatesVisible", platesVisible)
    local reference = Instance.new("ObjectValue"); reference.Name = "OwnerPlugin"; reference.Value = plugin; reference.Parent = current
    current.Parent = core
   end
   if root ~= current then
-   if rootConnection then rootConnection:Disconnect() end
+   if rootConnection then for _, connection in ipairs(rootConnection) do connection:Disconnect() end end
    root = current
    owner = root.OwnerPlugin.Value == plugin
-   rootConnection = root:GetAttributeChangedSignal("HoverOnly"):Connect(preferenceChanged)
+   rootConnection = {
+    root:GetAttributeChangedSignal("HoverOnly"):Connect(preferenceChanged),
+    root:GetAttributeChangedSignal("PlatesVisible"):Connect(preferenceChanged),
+   }
    preferenceChanged()
    if owner then
     copies, registered, tracked = {}, {}, {}
@@ -781,58 +849,87 @@ local function createController(plugin, onChanged)
     sensor = Instance.new("Frame"); sensor.Name = "ViewportPointer"
     sensor.BackgroundTransparency = 1; sensor.BorderSizePixel = 0; sensor.Active = false
     sensor.Selectable = false; sensor.Size = UDim2.fromScale(1, 1); sensor.Parent = screen
-    local function moved(x, y) mouseX, mouseY, inside = x, y, true end
+    local function moved(x, y)
+     mouseX, mouseY, inside = x, y, true
+     if update then update() end
+    end
     table.insert(links, sensor.MouseEnter:Connect(moved))
     table.insert(links, sensor.MouseMoved:Connect(moved))
-    table.insert(links, sensor.MouseLeave:Connect(function() inside = false end))
+    table.insert(links, sensor.MouseLeave:Connect(function() inside = false; if update then update() end end))
    end
   end
   return owner
  end
  local function sync()
-  registered, tracked = {}, {}
-  local present = {}
+  registered, tracked, movementBases = {}, {}, {}
+  local present, chosen = {}, {}
+  for _, character in ipairs(collection:GetTagged(CHARACTER_TAG)) do
+   if character:IsDescendantOf(world) then registered[character] = true end
+  end
+  for character in pairs(registered) do
+   for _, part in ipairs(character:GetDescendants()) do
+    if part:IsA("BasePart") and Rules.movementBase(part, character) then movementBases[part] = true end
+   end
+  end
   for _, template in ipairs(collection:GetTagged(TAG)) do
    if template:IsA("BillboardGui") and template:IsDescendantOf(world)
     and template:GetAttribute("CampaignLedgerLocalTemplate") == true then
     local reference = template:FindFirstChild("CampaignLedgerOwner")
     local character = reference and reference.Value
-    if character and character:IsDescendantOf(world) and character:HasTag(CHARACTER_TAG) then
-     registered[character], present[template] = true, true
-     tracked[template] = character
+    if character and character:IsDescendantOf(world) and character:HasTag(CHARACTER_TAG)
+     and Rules.character(character, world, registered) == character then
+     if Rules.prefer(template, chosen[character]) then chosen[character] = template end
+    end
+   end
+  end
+  for character, template in pairs(chosen) do
+     present[template], tracked[template] = true, character
      local copy = copies[template]
      if copy then
       local sourceName = template:FindFirstChild("CharacterName", true)
       local localName = copy:FindFirstChild("CharacterName", true)
       if sourceName and localName and sourceName.Text ~= localName.Text then localName.Text = sourceName.Text end
      end
-    end
-   end
   end
   for template, copy in pairs(copies) do
    if not present[template] then copy:Destroy(); copies[template] = nil end
   end
  end
- local function update()
+ update = function()
   local hovered
   local camera = world.CurrentCamera
-  if hoverOnly and inside and focused and camera and sensor and sensor.Visible then
+  if platesVisible and hoverOnly and inside and focused and camera and sensor and sensor.Visible then
    local pos, size, viewport = sensor.AbsolutePosition, sensor.AbsoluteSize, camera.ViewportSize
+   -- Read the current pointer each sample so coalesced GUI events cannot leave
+   -- the ray one mouse move behind. The passive surface still gates viewport exit.
+   local pointer = input:GetMouseLocation()
+   mouseX, mouseY = pointer.X, pointer.Y
    local x, y = Rules.viewportPoint(mouseX, mouseY, pos.X, pos.Y, size.X, size.Y, viewport.X, viewport.Y)
    if x then
     local ray = camera:ViewportPointToRay(x, y)
-    local hit = world:Raycast(ray.Origin, ray.Direction * 10000)
-    hovered = Rules.character(hit and hit.Instance, world, registered)
+    local excluded = {}
+    for _ = 1, 32 do
+     rayParams.FilterDescendantsInstances = excluded
+     local hit = world:Raycast(ray.Origin, ray.Direction * 10000, rayParams)
+     if not hit or not Rules.skipHit(hit.Instance) then
+      hovered = hit and not movementBases[hit.Instance] and Rules.character(hit.Instance, world, registered) or nil; break
+     end
+     table.insert(excluded, hit.Instance)
+    end
    end
   end
   for template, character in pairs(tracked) do
-   local visible = Rules.visible(hoverOnly, template:GetAttribute("CampaignLedgerPlateVisible"), character, hovered)
+   local visible = Rules.visible(hoverOnly, platesVisible and template:GetAttribute("CampaignLedgerPlateVisible"), character, hovered)
    local copy = copies[template]
    if visible and not copy then
     copy = template:Clone()
     collection:RemoveTag(copy, TAG)
     copy.Name = "Character_" .. tostring(character:GetAttribute("CampaignLedgerId"))
     copy:SetAttribute("CampaignLedgerLocalCopy", true)
+    copy.Active = false
+    for _, child in ipairs(copy:GetDescendants()) do
+     if child:IsA("GuiObject") then child.Active = false; child.Selectable = false end
+    end
     copy.Enabled = false; copy.Parent = root; copies[template] = copy
    end
    if copy then copy.Enabled = visible end
@@ -846,7 +943,7 @@ local function createController(plugin, onChanged)
  table.insert(links, run.Heartbeat:Connect(function(dt)
   if not alive then return end
   elapsed += dt; syncElapsed += dt
-  if elapsed < 0.05 then return end
+  if elapsed < 1 / 60 then return end
   elapsed = 0
   if not attach() then return end
   if dirty or syncElapsed >= 0.2 then dirty = false; syncElapsed = 0; sync() end
@@ -855,6 +952,11 @@ local function createController(plugin, onChanged)
  attach()
  local controller = {}
  function controller:getHoverOnly() return hoverOnly end
+ function controller:getPlatesVisible() return platesVisible end
+ function controller:setPlatesVisible(value)
+  attach()
+  if root then root:SetAttribute("PlatesVisible", value == true) end
+ end
  function controller:setHoverOnly(value)
   attach()
   if root then root:SetAttribute("HoverOnly", value == true) end
@@ -862,7 +964,7 @@ local function createController(plugin, onChanged)
  function controller:destroy()
   if not alive then return end
   alive = false
-  if rootConnection then rootConnection:Disconnect() end
+  if rootConnection then for _, connection in ipairs(rootConnection) do connection:Disconnect() end end
   for _, link in ipairs(links) do link:Disconnect() end
   if owner and root and root.Parent then root:Destroy() end
  end
@@ -883,6 +985,8 @@ function Hover.start(plugin, onChanged)
  entry.listeners[lease] = onChanged or false
  if onChanged then onChanged(entry.controller:getHoverOnly()) end
  function lease:getHoverOnly() return entry.controller:getHoverOnly() end
+ function lease:getPlatesVisible() return entry.controller:getPlatesVisible() end
+ function lease:setPlatesVisible(value) if alive then entry.controller:setPlatesVisible(value) end end
  function lease:setHoverOnly(value) if alive then entry.controller:setHoverOnly(value) end end
  function lease:destroy()
   if not alive then return end
@@ -909,7 +1013,7 @@ local CollectionService = game:GetService("CollectionService")
 local Plate = {}
 Plate.name = "CampaignLedgerPlate"
 Plate.tag = "CampaignLedgerGeneratedPlate"
-Plate.styleVersion = 11
+Plate.styleVersion = 12
 local C = Theme.colors
 
 -- Convert the design's reference pixels to relative layout once. Roblox handles
@@ -1001,12 +1105,28 @@ local function existingNameTop(character, bounds)
 	return highest
 end
 
-function Plate.get(character)
-	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("BillboardGui") and child.Name == Plate.name
-			and child:GetAttribute("CampaignLedgerOwned") == true then return child end
+function Plate.list(character)
+	local result, seen = {}, {}
+	local candidates = CollectionService:GetTagged(Plate.tag)
+	for _, child in ipairs(character:GetDescendants()) do
+		if child:IsA("BillboardGui") then table.insert(candidates, child) end
 	end
-	return nil
+	for _, gui in ipairs(candidates) do
+		if not seen[gui] and gui:IsA("BillboardGui") and gui.Name == Plate.name
+			and gui:GetAttribute("CampaignLedgerOwned") == true and Plate.owner(gui) == character then
+			seen[gui] = true; table.insert(result, gui)
+		end
+	end
+	return result
+end
+
+function Plate.get(character)
+	local primary
+	for _, gui in ipairs(Plate.list(character)) do
+		local id, previous = gui:GetAttribute("CampaignLedgerPlateId"), primary and primary:GetAttribute("CampaignLedgerPlateId")
+		if not primary or (type(id) == "string" and (type(previous) ~= "string" or id < previous)) then primary = gui end
+	end
+	return primary
 end
 
 function Plate.owner(gui)
@@ -1030,27 +1150,29 @@ function Plate.recoverState(gui)
 	return State.validate(state) and state or nil
 end
 
-function Plate.clear(character)
-	local candidates = CollectionService:GetTagged(Plate.tag)
-	for _, object in ipairs(character:GetDescendants()) do
-		if object:IsA("BillboardGui") then table.insert(candidates, object) end
-	end
-	local removed = {}
-	for _, gui in ipairs(candidates) do
-		if not removed[gui] and gui:IsA("BillboardGui") and gui.Name == Plate.name
-			and gui:GetAttribute("CampaignLedgerOwned") == true and Plate.owner(gui) == character then
-			removed[gui] = true
-			gui:Destroy()
-		end
-	end
+function Plate.clearAnchors(character, keep)
 	for _, object in ipairs(character:GetDescendants()) do
 		if object:IsA("Attachment") and object.Name == "CampaignLedgerAnchor"
-			and object:GetAttribute("CampaignLedgerOwned") == true then
+			and object:GetAttribute("CampaignLedgerOwned") == true and object ~= keep then
 			local cursor = object.Parent
 			while cursor and cursor ~= character and not cursor:HasTag(Registry.tag) do cursor = cursor.Parent end
 			if cursor == character then object:Destroy() end
 		end
 	end
+end
+
+function Plate.clear(character)
+	for _, gui in ipairs(Plate.list(character)) do gui:Destroy() end
+	Plate.clearAnchors(character)
+end
+
+function Plate.prune(character)
+	local primary = Plate.get(character)
+	-- New complete plates have a shared unique key. Every editor keeps the same
+	-- winner even when concurrent Team Create edits arrive in a different order.
+	if not primary or type(primary:GetAttribute("CampaignLedgerPlateId")) ~= "string" then return end
+	for _, gui in ipairs(Plate.list(character)) do if gui ~= primary then gui:Destroy() end end
+	Plate.clearAnchors(character, primary.Adornee)
 end
 
 function Plate.render(character, state)
@@ -1074,6 +1196,7 @@ function Plate.render(character, state)
 		Enabled = false, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, nil)
 	gui:SetAttribute("CampaignLedgerOwned", true)
+	gui:SetAttribute("CampaignLedgerPlateId", game:GetService("HttpService"):GenerateGUID(false))
 	gui:SetAttribute("CampaignLedgerLocalTemplate", true)
 	gui:SetAttribute("CampaignLedgerPlateVisible", state.showPlate)
 	gui:SetAttribute("CampaignLedgerStyleVersion", Plate.styleVersion)
@@ -1314,7 +1437,7 @@ function Panel.new(widget, actions)
  Theme.button(self.advanced, "Rebuild overhead plate", { LayoutOrder = 9, TextSize = 15 }).Activated:Connect(actions.rebuild)
  Theme.button(self.advanced, "Remove from ledger", { LayoutOrder = 10, TextSize = 15,
   TextColor3 = C.muted }).Activated:Connect(actions.remove)
- Theme.label(self.advanced, "Lowering a maximum clamps the current value. Studio Undo reverts edits.", 14, {
+ Theme.label(self.advanced, "Saving a maximum refills that resource. Studio Undo reverts edits.", 14, {
   LayoutOrder = 11, TextColor3 = C.muted, TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Size = UDim2.new(1, 0, 0, 42) })
  self.hoverToggle = Theme.button(self.root, "Hover plates: On", { Name = "HoverPreference", BackgroundColor3 = C.shell,
   TextColor3 = C.light, Position = UDim2.new(0, 12, 1, -60), Size = UDim2.new(1, -24, 0, 26), TextSize = 14 })
@@ -1518,10 +1641,10 @@ local function scheduleRefresh()
 end
 
 refresh = function()
-	local entries, present, plateUpdates = {}, {}, {}
+	local entries, present, plateUpdates, pruneUpdates = {}, {}, {}, {}
 	local characters = {}
 	for _, character in ipairs(CollectionService:GetTagged(TAG)) do
-		if character:IsDescendantOf(Workspace) then
+		if character:IsDescendantOf(Workspace) and not Registry.registeredAncestor(character.Parent, Workspace) then
 			table.insert(characters, character)
 		end
 	end
@@ -1532,8 +1655,9 @@ refresh = function()
 			table.insert(entries, { character = character, state = state, id = ids[character] })
 			if state and Plate.anchor(character) then
 				local plate = Plate.get(character)
-				local upgrade = not styled[character] and (not plate or plate:GetAttribute("CampaignLedgerStyleVersion") ~= Plate.styleVersion)
+				local upgrade = not plate or not styled[character] and plate:GetAttribute("CampaignLedgerStyleVersion") ~= Plate.styleVersion
 					or (plate and plate:GetAttribute(Registry.idAttribute) ~= ids[character])
+				if #Plate.list(character) > 1 then table.insert(pruneUpdates, character) end
 				local label = plate and plate:FindFirstChild("CharacterName", true)
 				if upgrade or (label and label.Text ~= state.name) then
 					table.insert(plateUpdates, { character = character, upgrade = upgrade })
@@ -1563,7 +1687,7 @@ refresh = function()
 		return string.lower(aName) < string.lower(bName)
 	end)
 	panel:refresh(entries, selected, selected and read(selected) or nil)
-	if (#plateUpdates > 0 or #identityUpdates > 0) and not busy and not automaticSyncFailed and not RunService:IsRunning() then
+	if (#plateUpdates > 0 or #identityUpdates > 0 or #pruneUpdates > 0) and not busy and not automaticSyncFailed and not RunService:IsRunning() then
 		-- Idempotent shared writes: generated plates are excluded from name observers.
 		-- Upgrade once per character per load so Undo can restore an older style.
 		local synced = transaction("Update ledger plates and names", function()
@@ -1581,6 +1705,7 @@ refresh = function()
 					end
 				end
 			end
+			for _, character in ipairs(pruneUpdates) do Plate.prune(character) end
 		end)
 		if synced then
 			for _, update in ipairs(plateUpdates) do if update.upgrade then styled[update.character] = true end end
@@ -1640,12 +1765,7 @@ local function change(label, transform, message)
 end
 
 local function taggedAncestor(instance)
-	local cursor = instance
-	while cursor and cursor ~= Workspace do
-		if isCharacter(cursor) then return cursor end
-		cursor = cursor.Parent
-	end
-	return nil
+	return Registry.registeredAncestor(instance, Workspace)
 end
 
 local function register()
@@ -1660,7 +1780,8 @@ local function register()
 	local canonical, candidateError = Registry.character(candidate)
 	if not canonical then notify(candidateError, true); return end
 	candidate = canonical
-	if isCharacter(candidate) then selected = candidate; scheduleRefresh(); return end
+	existing = taggedAncestor(candidate)
+	if existing then selected = existing; scheduleRefresh(); notify("This character is already registered."); return end
 	if not Plate.anchor(candidate) then notify("The selected model needs at least one BasePart.", true); return end
 	for _, character in ipairs(CollectionService:GetTagged(TAG)) do
 		if character:IsDescendantOf(candidate) then
@@ -1675,6 +1796,9 @@ local function register()
 	local state = State.rename(default, Names.resolve(candidate)) or default
 	state.autoName = true
 	if transaction("Register " .. state.name, function()
+		-- Re-read at the write boundary. Another editor/plugin may have registered
+		-- this exact instance after selection; never replace an existing state.
+		if candidate:GetAttribute(ATTRIBUTE) ~= nil or taggedAncestor(candidate) then return end
 		candidate:SetAttribute(Registry.idAttribute, HttpService:GenerateGUID(false))
 		candidate:SetAttribute(ATTRIBUTE, HttpService:JSONEncode(state))
 		CollectionService:AddTag(candidate, TAG)
@@ -1763,7 +1887,7 @@ actions.recover = function(manaValue, apValue, allCharacters)
 	local updates = {}
 	-- Validate every target before writing anything. Roster search never limits recovery.
 	for _, character in ipairs(targets) do
-		if isCharacter(character) then
+		if isCharacter(character) and not Registry.registeredAncestor(character.Parent, Workspace) then
 			local state, readError = read(character)
 			if not state then notify(character.Name .. ": " .. readError, true); return end
 			if not Plate.anchor(character) then notify(character.Name .. " has no plate anchor.", true); return end
@@ -1858,6 +1982,8 @@ connect(Selection.SelectionChanged, function()
 end)
 connect(CollectionService:GetInstanceAddedSignal(TAG), scheduleRefresh)
 connect(CollectionService:GetInstanceRemovedSignal(TAG), scheduleRefresh)
+connect(CollectionService:GetInstanceAddedSignal(Plate.tag), scheduleRefresh)
+connect(CollectionService:GetInstanceRemovedSignal(Plate.tag), scheduleRefresh)
 connect(Workspace.DescendantAdded, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
 connect(Workspace.DescendantRemoving, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
 connect(ChangeHistoryService.OnUndo, scheduleRefresh)

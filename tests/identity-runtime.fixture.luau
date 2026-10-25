@@ -110,6 +110,7 @@ function Plate.render(character, state)
  Plate.clear(character)
  local anchor = object("Attachment", "CampaignLedgerAnchor", Plate.anchor(character)); anchor:SetAttribute("CampaignLedgerOwned", true)
  local gui = object("BillboardGui", Plate.name, character); gui.Adornee = anchor
+ gui:SetAttribute("CampaignLedgerPlateId", http:GenerateGUID(false))
  gui:SetAttribute("CampaignLedgerOwned", true); gui:SetAttribute("CampaignLedgerStyleVersion", Plate.styleVersion)
  gui:SetAttribute(Registry.idAttribute, character:GetAttribute(Registry.idAttribute))
  local owner = object("ObjectValue", "CampaignLedgerOwner", gui); owner.Value = character
@@ -120,6 +121,7 @@ end
 local function character(name)
  local m = object("Model", name, workspace); object("BasePart", "Head", m)
  local state = State.default(name); state.autoName = false; state.hp.current = 11; state.mana.current = 2; state.ap.current = 1
+ state.hp.maximum, state.mana.maximum, state.ap.maximum = 30, 12, 3
  m:SetAttribute("CampaignLedgerState", http:JSONEncode(state)); collection:AddTag(m, Registry.tag); return m
 end
 local first, second = character("Same Name"), character("Same Name")

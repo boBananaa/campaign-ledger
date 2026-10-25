@@ -73,7 +73,11 @@ local head = object("BasePart", "Head", rig)
 local anchor = object("Attachment", "CampaignLedgerAnchor", head)
 check(Registry.character(wrapper) == rig, "outer wrapper resolves to actual rig")
 check(Registry.character(rig) == rig, "actual rig unchanged")
-check(Registry.character(head) == head, "single part token supported")
+check(Registry.character(head) == rig, "selecting a limb resolves the owning rig")
+check(Registry.character(object("BasePart", "Token", world)).Name == "Token", "standalone part token supported")
+rig.tags[Registry.tag] = true
+head.tags[Registry.tag] = true
+check(Registry.registeredAncestor(head, world) == rig, "nested duplicate resolves outer registration")
 check(Registry.character(object("Model", "Dog")) ~= nil, "non-humanoid model supported")
 local otherRig = object("Model", "Same Name", wrapper)
 object("Humanoid", "Humanoid", otherRig)

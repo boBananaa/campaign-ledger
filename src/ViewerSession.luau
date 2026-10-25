@@ -66,6 +66,8 @@ return stop, {
  getVisible = function() return visible end,
  setVisible = function(value) if alive then visible = value == true; refresh() end end,
  getHoverOnly = function() return hover:getHoverOnly() end,
+ getPlatesVisible = function() return hover:getPlatesVisible() end,
+ setPlatesVisible = function(value) if alive then hover:setPlatesVisible(value) end end,
  setHoverOnly = function(value) if alive then hover:setHoverOnly(value) end end,
 }
 end

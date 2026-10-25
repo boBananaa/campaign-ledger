@@ -20,9 +20,9 @@ Run each tests/*.spec.luau using the official Luau CLI, then run
 `python3 scripts/test_ui.py /path/to/luau` and
 `python3 scripts/test_scope.py /path/to/luau` and
 `python3 scripts/test_suite.py /path/to/luau`. The current set contains
-473 passing checks: 52 resource, 23 name, 171 combat/layout/placement/dice/turn,
-23 identity/ownership, 17 controller/cleanup, 22 hover rules, 30 hover-controller,
-43 UI workflow/layout, 50 world-isolation/bootstrap and 42 combined-suite checks. These include rotated and translated geometry, off-centre heads, compact
+517 passing checks: 54 resource, 23 name, 174 combat/layout/placement/dice/turn,
+25 identity/ownership, 28 controller/cleanup, 25 hover rules, 48 hover-controller,
+45 UI workflow/layout, 50 world-isolation/bootstrap and 45 combined-suite checks. These include rotated and translated geometry, off-centre heads, compact
 vertical clearance, custom add/subtract amounts, maximum-only edits, divider limits,
 selection-button padding, advantage/disadvantage, manual recovery amounts, skipped
 resources, health preservation and hiding inactive turns.
@@ -75,10 +75,29 @@ Either the new Ledger or the new Turn Watch provides the viewer. Players must
 install the updated Turn Watch to see these templates. Installing both produces
 one renderer, with takeover when its owning plugin reloads or unloads.
 
-Hover uses a passive viewport surface and camera raycast, sampled at 20 Hz.
+Hover uses a passive viewport surface and camera raycast, sampled up to 60 Hz with
+immediate pointer events and a current pointer read each sample. It skips nearly
+invisible parts with a bounded exclusion raycast and stops at opaque map geometry.
+Thin horizontal movement bases below the visible multi-part figure are excluded
+from activation without changing picking/physics properties. The
+`CampaignLedgerIgnoreHover` boolean attribute on a part/group can override that heuristic.
 Shared templates are reconciled at most every 0.2 seconds and when added/removed.
 Copies update after stat rebuilds and automatic name changes; removed characters
 lose their local copies. Local UI is removed when the last viewer unloads.
+One template per exact owner is chosen before rendering; keyed duplicate winners
+are independent of arrival order. A separate local `CampaignLedgerPlatesVisible`
+preference gates every copy without changing shared visibility or combat state.
+
+Generated plates now carry `CampaignLedgerPlateId`. Ledger reconciliation prunes
+same-owner duplicates using that shared key and preserves the winner's attachment.
+Selecting a body part canonicalizes to its rig before registration, with a second
+saved-state check inside the edit transaction. Parent/child registration overlaps
+are suppressed in the roster/viewer/recovery, without deleting either saved state.
+This repairs converged duplicate displays; it is not a distributed edit lock.
+
+State remains schema version 1. Loading valid existing attributes never applies
+new registration defaults. Only explicit registration uses 100/125/6; only an
+explicit maximum-save action fills the chosen resource to its new maximum.
 
 ## Character identity and migration
 

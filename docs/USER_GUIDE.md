@@ -14,8 +14,8 @@
    and Refill AP. Values clamp between zero and the character's maximum.
 4. Below the combat controls, click **Character details · maximums & settings** to edit permanent
    maximums, restore resources, rename, tune plate height, rebuild or unregister.
-   Increasing a maximum preserves the current amount; lowering it clamps the current
-   amount if necessary. Saving a maximum never resubmits a stale current value.
+   Saving a maximum immediately fills that resource to the entered maximum. It
+   leaves the other resources alone; Studio Undo restores the previous values.
 5. Drag the **three-mark divider grip** between the roster and editor to give either section more
    room. The split is bounded so both remain accessible, and is saved locally.
 
@@ -30,7 +30,9 @@ stopping the player turn/hover viewer. Enabling DM controls again keeps the menu
 closed until opened from the launcher. The choice is local and remembered for this plugin.
 Closing the launcher leaves the turn notice and hover viewer running.
 
-Defaults for a new registration are 30 health, 12 mana and 3 AP. All maximums are
+Defaults for a new registration are 100 health, 125 mana and 6 AP, all full. These
+defaults apply only to new characters. Updating the plugin preserves existing saved
+values, maximums, names, IDs and settings; no re-registration is needed. All maximums are
 editable whole numbers from 0 to 9999; these defaults do not implement official D&D
 rules. AP refill is independent of whose side has the turn.
 
@@ -72,8 +74,10 @@ older copies ignore the new world setting.
 ## Hover-only stats
 
 Stats appear only while the cursor is over a registered character, enabled by
-default for every Studio user. Any queried descendant part, including nested
-accessories, weapons and non-humanoid tokens, resolves to its registered owner.
+default for every Studio user. Visible body parts and non-humanoid tokens resolve
+to their registered owner. Flat movement bases beneath multi-part figures do not
+trigger stats; they remain selectable and draggable in Studio. Invisible helper
+parts are skipped, while opaque map geometry blocks targeting behind it.
 Leaving the model or viewport hides the plate. The plugin does not activate an exclusive mouse tool. A reported chest-selection
 issue remains unresolved; see [known issues](../QA.md#known-issue-at-hover-plates-v1-release).
 
@@ -86,6 +90,19 @@ In the DM ledger, use the fixed bottom control
 is saved locally and shared by the ledger and viewer in the same Studio window.
 Each collaborator has their own cursor and preference. **Hide overhead plate**
 continues to hide that character in either mode.
+
+**Stat plates: Off** in Campaign Tools completely hides the plugin's overhead
+displays on your screen, including on hover. This preference is remembered locally;
+it does not change combat stats, turn text or other players' displays. Switching
+back on restores your hover-only preference. Original model nametags remain intact.
+For an unusual movement handle, set its boolean `CampaignLedgerIgnoreHover`
+attribute to true. False overrides automatic base detection for that part.
+
+Repeated registration selects the existing character without resetting it. A limb
+selection resolves to its containing rig. Duplicate generated plates collapse to
+one display per model; distinct models sharing a name remain independent. Old
+overlapping parent/child registrations use the outer registration in the roster
+and viewer, preserving the hidden child registration's saved data.
 
 ## Names and plate placement
 

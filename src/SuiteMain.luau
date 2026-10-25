@@ -13,7 +13,8 @@ local stopLedger, stopDice, ledger, dice, viewer, launcher
 local function refresh()
  if not launcher or not alive then return end
  launcher:refresh({ dmEnabled = dmEnabled, worldEnabled = WorldScope.isEnabled(), viewerReady = viewer ~= nil,
-  turnVisible = not viewer or viewer.getVisible(), hoverOnly = not viewer or viewer.getHoverOnly() })
+  turnVisible = not viewer or viewer.getVisible(), hoverOnly = not viewer or viewer.getHoverOnly(),
+  platesVisible = not viewer or viewer.getPlatesVisible() })
 end
 local function stopDM()
  ledger, dice = nil, nil
@@ -43,6 +44,9 @@ end
 function actions.toggleHover()
  if viewer then viewer.setHoverOnly(not viewer.getHoverOnly()) end
 end
+function actions.togglePlates()
+ if viewer then viewer.setPlatesVisible(not viewer.getPlatesVisible()) end
+end
 function actions.openLedger() if ledger then ledger.open() end end
 function actions.openDice() if dice then dice.open() end end
 
@@ -50,7 +54,7 @@ local toolbar = plugin:CreateToolbar("Campaign Tools")
 local button = toolbar:CreateButton("CampaignTools.Open", "Open Campaign Tools", "", "Campaign Tools")
 button.ClickableWhenViewportHidden = true
 local widget = WorldScope.widget(plugin, "CampaignTools.Launcher.v1", DockWidgetPluginGuiInfo.new(
- Enum.InitialDockState.Float, false, true, 350, 430, 320, 420))
+ Enum.InitialDockState.Float, false, true, 350, 470, 320, 460))
 widget.Title = "Campaign Tools"
 launcher = LauncherPanel.new(widget, actions)
 local click = button.Click:Connect(function() widget.Enabled = not widget.Enabled end)

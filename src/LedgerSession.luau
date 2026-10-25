@@ -57,10 +57,10 @@ local function scheduleRefresh()
 end
 
 refresh = function()
-	local entries, present, plateUpdates = {}, {}, {}
+	local entries, present, plateUpdates, pruneUpdates = {}, {}, {}, {}
 	local characters = {}
 	for _, character in ipairs(CollectionService:GetTagged(TAG)) do
-		if character:IsDescendantOf(Workspace) then
+		if character:IsDescendantOf(Workspace) and not Registry.registeredAncestor(character.Parent, Workspace) then
 			table.insert(characters, character)
 		end
 	end
@@ -71,8 +71,9 @@ refresh = function()
 			table.insert(entries, { character = character, state = state, id = ids[character] })
 			if state and Plate.anchor(character) then
 				local plate = Plate.get(character)
-				local upgrade = not styled[character] and (not plate or plate:GetAttribute("CampaignLedgerStyleVersion") ~= Plate.styleVersion)
+				local upgrade = not plate or not styled[character] and plate:GetAttribute("CampaignLedgerStyleVersion") ~= Plate.styleVersion
 					or (plate and plate:GetAttribute(Registry.idAttribute) ~= ids[character])
+				if #Plate.list(character) > 1 then table.insert(pruneUpdates, character) end
 				local label = plate and plate:FindFirstChild("CharacterName", true)
 				if upgrade or (label and label.Text ~= state.name) then
 					table.insert(plateUpdates, { character = character, upgrade = upgrade })
@@ -102,7 +103,7 @@ refresh = function()
 		return string.lower(aName) < string.lower(bName)
 	end)
 	panel:refresh(entries, selected, selected and read(selected) or nil)
-	if (#plateUpdates > 0 or #identityUpdates > 0) and not busy and not automaticSyncFailed and not RunService:IsRunning() then
+	if (#plateUpdates > 0 or #identityUpdates > 0 or #pruneUpdates > 0) and not busy and not automaticSyncFailed and not RunService:IsRunning() then
 		-- Idempotent shared writes: generated plates are excluded from name observers.
 		-- Upgrade once per character per load so Undo can restore an older style.
 		local synced = transaction("Update ledger plates and names", function()
@@ -120,6 +121,7 @@ refresh = function()
 					end
 				end
 			end
+			for _, character in ipairs(pruneUpdates) do Plate.prune(character) end
 		end)
 		if synced then
 			for _, update in ipairs(plateUpdates) do if update.upgrade then styled[update.character] = true end end
@@ -179,12 +181,7 @@ local function change(label, transform, message)
 end
 
 local function taggedAncestor(instance)
-	local cursor = instance
-	while cursor and cursor ~= Workspace do
-		if isCharacter(cursor) then return cursor end
-		cursor = cursor.Parent
-	end
-	return nil
+	return Registry.registeredAncestor(instance, Workspace)
 end
 
 local function register()
@@ -199,7 +196,8 @@ local function register()
 	local canonical, candidateError = Registry.character(candidate)
 	if not canonical then notify(candidateError, true); return end
 	candidate = canonical
-	if isCharacter(candidate) then selected = candidate; scheduleRefresh(); return end
+	existing = taggedAncestor(candidate)
+	if existing then selected = existing; scheduleRefresh(); notify("This character is already registered."); return end
 	if not Plate.anchor(candidate) then notify("The selected model needs at least one BasePart.", true); return end
 	for _, character in ipairs(CollectionService:GetTagged(TAG)) do
 		if character:IsDescendantOf(candidate) then
@@ -214,6 +212,9 @@ local function register()
 	local state = State.rename(default, Names.resolve(candidate)) or default
 	state.autoName = true
 	if transaction("Register " .. state.name, function()
+		-- Re-read at the write boundary. Another editor/plugin may have registered
+		-- this exact instance after selection; never replace an existing state.
+		if candidate:GetAttribute(ATTRIBUTE) ~= nil or taggedAncestor(candidate) then return end
 		candidate:SetAttribute(Registry.idAttribute, HttpService:GenerateGUID(false))
 		candidate:SetAttribute(ATTRIBUTE, HttpService:JSONEncode(state))
 		CollectionService:AddTag(candidate, TAG)
@@ -302,7 +303,7 @@ actions.recover = function(manaValue, apValue, allCharacters)
 	local updates = {}
 	-- Validate every target before writing anything. Roster search never limits recovery.
 	for _, character in ipairs(targets) do
-		if isCharacter(character) then
+		if isCharacter(character) and not Registry.registeredAncestor(character.Parent, Workspace) then
 			local state, readError = read(character)
 			if not state then notify(character.Name .. ": " .. readError, true); return end
 			if not Plate.anchor(character) then notify(character.Name .. " has no plate anchor.", true); return end
@@ -397,6 +398,8 @@ connect(Selection.SelectionChanged, function()
 end)
 connect(CollectionService:GetInstanceAddedSignal(TAG), scheduleRefresh)
 connect(CollectionService:GetInstanceRemovedSignal(TAG), scheduleRefresh)
+connect(CollectionService:GetInstanceAddedSignal(Plate.tag), scheduleRefresh)
+connect(CollectionService:GetInstanceRemovedSignal(Plate.tag), scheduleRefresh)
 connect(Workspace.DescendantAdded, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
 connect(Workspace.DescendantRemoving, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
 connect(ChangeHistoryService.OnUndo, scheduleRefresh)
