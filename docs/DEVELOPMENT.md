@@ -20,9 +20,9 @@ Run each tests/*.spec.luau using the official Luau CLI, then run
 `python3 scripts/test_ui.py /path/to/luau` and
 `python3 scripts/test_scope.py /path/to/luau` and
 `python3 scripts/test_suite.py /path/to/luau`. The current set contains
-517 passing checks: 54 resource, 23 name, 174 combat/layout/placement/dice/turn,
+521 passing checks: 54 resource, 23 name, 174 combat/layout/placement/dice/turn,
 25 identity/ownership, 28 controller/cleanup, 25 hover rules, 48 hover-controller,
-45 UI workflow/layout, 50 world-isolation/bootstrap and 45 combined-suite checks. These include rotated and translated geometry, off-centre heads, compact
+49 UI workflow/layout, 50 world-isolation/bootstrap and 45 combined-suite checks. These include rotated and translated geometry, off-centre heads, compact
 vertical clearance, custom add/subtract amounts, maximum-only edits, divider limits,
 selection-button padding, advantage/disadvantage, manual recovery amounts, skipped
 resources, health preservation and hiding inactive turns.

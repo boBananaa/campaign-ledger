@@ -13,6 +13,7 @@ boundaries and known issues.
 
 | Version | What it preserves |
 | --- | --- |
+| [checkpoint-2026-10-24-heading-spacing](https://github.com/boBananaa/campaign-ledger/tree/checkpoint-2026-10-24-heading-spacing) | Session fixes plus the narrow-panel Custom amount / Select model overlap fix. Compact constructor checks pass; native validation pending. |
 | [checkpoint-2026-10-24-session-fixes](https://github.com/boBananaa/campaign-ledger/tree/checkpoint-2026-10-24-session-fixes) | Body hover with movement bases excluded, master plate visibility, duplicate-plate reconciliation, new-character defaults and refill-on-maximum. 517 automated checks pass; full native/multi-user validation pending. |
 | [checkpoint-2026-10-24-launcher](https://github.com/boBananaa/campaign-ledger/tree/checkpoint-2026-10-24-launcher) | Ash/burgundy UI, world isolation, combined Campaign Tools, single-button launcher and simplified D20. 473 automated checks pass; the new launcher still needs native Studio validation. |
 | [hover-plates-v1](https://github.com/boBananaa/campaign-ledger/tree/hover-plates-v1) | Approved hover-only stats release. |

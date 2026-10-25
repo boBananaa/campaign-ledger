@@ -1366,8 +1366,8 @@ function Panel.new(widget, actions)
   Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0) })
  Theme.button(self.heading, "Select model in map", { Name = "SelectModel", BackgroundColor3 = C.surface, Position = UDim2.new(0, 0, 0, Layout.selectButtonTop),
   Size = UDim2.fromOffset(140, Layout.selectButtonHeight), TextSize = 13 }).Activated:Connect(actions.selectModel)
- Theme.label(self.heading, "Custom amount ↓", 12, { TextColor3 = C.muted, Position = UDim2.new(0.5, 0, 0, 26),
-  Size = UDim2.new(0.5, 0, 0, 20) })
+ Theme.label(self.heading, "Custom amount ↓", 12, { Name = "CustomAmountHint", TextColor3 = C.muted,
+  Position = UDim2.fromOffset(148, Layout.selectButtonTop), Size = UDim2.new(1, -148, 0, Layout.selectButtonHeight) })
  for index, key in ipairs(State.resources) do
   local row = frame(self.content, { Name = key .. "Combat", LayoutOrder = index + 1, Size = UDim2.new(1, 0, 0, Layout.resourceHeight) })
   Theme.label(row, State.labels[key], 16, { Font = Theme.bold, TextColor3 = C[key], Size = UDim2.new(1, -158, 0, 24) })

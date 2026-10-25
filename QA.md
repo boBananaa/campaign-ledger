@@ -2,12 +2,22 @@
 
 ## Automated checks
 
-517 checks pass with the official Luau CLI: 54 combat-state, 23 name-resolver,
+521 checks pass with the official Luau CLI: 54 combat-state, 23 name-resolver,
 174 combat/layout/placement/dice/turn, 25 identity/ownership, 28 controller/cleanup,
-25 hover-rule, 48 hover-controller, 45 UI workflow/layout, 50 world-isolation/bootstrap
+25 hover-rule, 48 hover-controller, 49 UI workflow/layout, 50 world-isolation/bootstrap
 and 45 combined-suite checks. All four generated plugins compile.
 The pure modules pass static analysis. Archive integrity and bundle/source matching
 are checked by the build workflow.
+
+## Compact heading spacing · 2026-10-24
+
+- The Custom amount cue previously started halfway across the heading, which
+  overlapped the fixed-width Select model in map button in a narrow dock.
+- It now starts after the button with an 8px gap and uses only the remaining
+  heading width. Existing truncation keeps the cue inside that region.
+- Production-constructor checks cover heading widths 220, 258, 288 and 458px.
+  The compact offline rendering was inspected; native Studio text/input checks
+  remain pending. Character data and the live session are unchanged.
 
 ## Session fixes · 2026-10-24
 

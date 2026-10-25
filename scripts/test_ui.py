@@ -32,6 +32,15 @@ state.hp.current = 24; state.hp.maximum = 40; state.mana.current = 7; state.mana
 local entries = { { character = a, state = state, id = "one" }, { character = b, state = State.default("Lisa"), id = "two" } }
 panel:refresh(entries, a, state); panel:updateTurn("party"); panel:updateHoverOnly(true)
 check(panel.heading.Visible and not panel.advanced.Visible, "details collapsed by default")
+local selectButton = panel.heading:FindFirstChild("SelectModel")
+local amountHint = panel.heading:FindFirstChild("CustomAmountHint")
+for _, width in ipairs({ 220, 258, 288, 458 }) do
+ local buttonRight = (selectButton.Position.X.Scale + selectButton.Size.X.Scale) * width + selectButton.Position.X.Offset + selectButton.Size.X.Offset
+ local hintLeft = amountHint.Position.X.Scale * width + amountHint.Position.X.Offset
+ local hintWidth = amountHint.Size.X.Scale * width + amountHint.Size.X.Offset
+ check(hintLeft >= buttonRight + 8 and hintWidth > 0 and hintLeft + hintWidth <= width,
+  "custom amount cue stays outside selection button at heading width " .. width)
+end
 click(host, "Character_two"); check(last()[2] == b, "roster targets actual instance with same name")
 click(host, "hpPreset1"); check(last()[1] == "adjust" and last()[2] == "hp" and last()[3] == -5, "quick damage dispatch")
 panel.fields.hp.amount.Text = "12"
