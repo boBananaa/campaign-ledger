@@ -1,14 +1,20 @@
-"""Bundle three offline Studio plugins from native Luau modules."""
+"""Build one publishable Campaign Tools plugin and the legacy standalone variants."""
+import argparse
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile, ZIP_DEFLATED
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--no-sync", action="store_true", help="Build dist only; leave connected Studio Script Sync files unchanged")
+args = parser.parse_args()
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGINS = {
-    "CampaignLedger": (["State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "Panel"], "Main"),
-    "CampaignD20": (["Theme", "Dice"], "D20Main"),
-    "CampaignTurnWatch": (["Theme", "Turn", "HoverRules", "Hover"], "TurnMain"),
+    "CampaignTools": (["WorldScope", "State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "Panel", "Dice", "DicePanel", "LauncherPanel", "LedgerSession", "DiceSession", "ViewerSession"], "SuiteMain"),
+    "CampaignLedger": (["WorldScope", "State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "Panel", "LedgerSession"], "Main"),
+    "CampaignD20": (["WorldScope", "Theme", "Dice", "DicePanel", "DiceSession"], "D20Main"),
+    "CampaignTurnWatch": (["WorldScope", "Theme", "Turn", "HoverRules", "Hover", "ViewerSession"], "TurnMain"),
 }
 
 def inline_requires(source):
@@ -25,7 +31,8 @@ for name, (modules, entry) in PLUGINS.items():
     bundle = "\n".join(parts)
     assert "require(" not in bundle, "Plugins must contain no module or remote requires"
     (out / f"{name}.luau").write_text(bundle)
-    (ROOT / "DnD Test Scripts" / f"{name}.legacy.luau").write_text(bundle)
+    if not args.no_sync:
+        (ROOT / "DnD Test Scripts" / f"{name}.legacy.luau").write_text(bundle)
     roblox = ET.Element("roblox", {"version": "4"})
     item = ET.SubElement(roblox, "Item", {"class": "Script", "referent": "RBX0"})
     props = ET.SubElement(item, "Properties")
@@ -36,14 +43,18 @@ for name, (modules, entry) in PLUGINS.items():
     ET.ElementTree(roblox).write(out / f"{name}.rbxmx", encoding="utf-8", xml_declaration=True)
     print(f"Built {name}: {len(bundle.splitlines())} lines")
 
-files = [ROOT / "README.md", ROOT / "DESIGN.md", ROOT / "QA.md", ROOT / "BACKUPS.md", ROOT / "scripts/build.py", ROOT / "scripts/test_identity.py", ROOT / "scripts/test_hover.py",
+files = [ROOT / "README.md", ROOT / "DESIGN.md", ROOT / "QA.md", ROOT / "BACKUPS.md", *sorted((ROOT / "scripts").glob("*.py")),
          *sorted((ROOT / "docs").rglob("*.md")),
          *sorted((ROOT / "src").glob("*.luau")), *sorted((ROOT / "tests").glob("*.luau")),
          ROOT / "tests/Fixture.rbxlx"]
-for name in PLUGINS:
-    files.extend([out / f"{name}.rbxmx", out / f"{name}.luau"])
-with ZipFile(out / "CampaignLedger.zip", "w", ZIP_DEFLATED) as archive:
-    for path in files:
-        archive.write(path, path.relative_to(ROOT))
-with ZipFile(out / "CampaignLedger.zip") as archive:
-    assert archive.testzip() is None
+# The primary archive carries one installable Script, not three competing plugins.
+for archive_name, names in [("CampaignTools.zip", ["CampaignTools"]),
+                            ("CampaignLedger.zip", ["CampaignLedger", "CampaignD20", "CampaignTurnWatch"])]:
+    package_files = files.copy()
+    for name in names:
+        package_files.extend([out / f"{name}.rbxmx", out / f"{name}.luau"])
+    with ZipFile(out / archive_name, "w", ZIP_DEFLATED) as archive:
+        for path in package_files:
+            archive.write(path, path.relative_to(ROOT))
+    with ZipFile(out / archive_name) as archive:
+        assert archive.testzip() is None

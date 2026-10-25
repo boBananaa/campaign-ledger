@@ -11,21 +11,26 @@ character collection. Runtime gameplay and player movement are outside this plug
 
 | Token | Hex | Role |
 | --- | --- | --- |
-| Parchment | #C1B6A7 | Main panel |
-| Paper | #D8CDBB | Buttons and overhead resource surface |
-| Writing field | #E5DBC9 | Editable fields and dice result |
-| Dark ink | #382B22 | Primary text, selected roster row and name bands |
-| Ship red | #97372C | Title, health and selection |
-| Weathered teal | #405B5A | Mana |
-| Walnut | #6A4A2A | Action points |
+| Ash base | #28202A | Supporting dark surface |
+| Smoked plum | #3C303B | Roster, character sheet and overhead resource surface |
+| Input well | #4B3B48 | Editable fields and dice result |
+| Pale ash | #EEE6E1 | Primary text and exact values |
+| Supporting text | #C5B5C0 | Secondary labels and maximums |
+| Faded rose | #E7A1A1 | Health |
+| Lavender | #B6BEDF | Mana |
+| Pale bone | #DAC9B0 | Action points |
+| Dark binding | #251C25 | Outer shell and overhead name strip |
+| Burgundy | #6B4B5A | Active controls and roll action |
+| Roster selection | #64434F | Selected character row |
+| Rose accent | #D5A1B2 | Focus outlines and selection mark |
 
-The palette follows the user's Crew of Northwatch character-sheet reference:
-grey-beige parchment, rusty red artwork and brown botanical borders. Keep native
-UI surfaces clean rather than adding noisy raster texture beneath small controls.
-Supporting text uses brown ink. Use native Roblox fonts: Fondamento for
-character names and the ledger title; SourceSans / SourceSansSemibold for controls,
-labels and numeric values. Body 16, supporting 13–14, heading 26, key value 28.
-Current resource values are larger than their adjacent maximums.
+The user selected palette C, Ash & burgundy, from three otherwise identical
+mockups. Smoked plum and faded wine replace the previous beige/brown scheme.
+Keep dark surfaces separate from pale text tokens, including selected controls,
+overhead names and Turn Watch. Resource colors remain distinct from selection
+fills. Use native Roblox fonts: Garamond for character names and the ledger title;
+SourceSans / SourceSansSemibold for controls, labels and numeric values. Body 16,
+supporting 13–14, heading 28, key value 24. Current values are larger than maximums.
 
 Use square edges throughout: panel surfaces, buttons, inputs, roster selections,
 overhead plates, resource bars and AP diamonds. No UICorner instances.
@@ -33,7 +38,7 @@ overhead plates, resource bars and AP diamonds. No UICorner instances.
 ## Layout
 
 Compact overhead plate: centered character name, two left-aligned resource bars
-with exact numbers, and countable AP pips. A thin brown edge ties it to a miniature's
+with exact numbers, and countable AP pips. A fine rose-grey edge ties it to a miniature's
 nameplate. One expressive piece, with quiet controls around it.
 
 The plate spans 3.8 studs and shrinks naturally with distance. All child geometry
@@ -171,9 +176,9 @@ displayed values; Workspace is explicitly excluded despite inheriting Model.
 ## Hover-only display
 
 Preserve parchment #C1B6A7, paper #D8CDBB, rust #97372C, ink #382B22 and teal
-#405B5A, with Fondamento names and SourceSans controls. Add one square display-mode
-button in a general settings row below turn recovery, visible without selecting a
-character. The control reads Hover-only plates: On/Off; player toolbar has Hover
+#405B5A, with Garamond names and SourceSans controls. Add one square display-mode
+button in a fixed bottom row, visible without selecting a
+character. The control reads Hover plates: On/Off · this window; player toolbar has Hover
 plates. Keep the current plate layout and avoid added animation or decoration.
 
 A passive local CoreGui viewport surface supplies pointer coordinates. Normalize
@@ -185,7 +190,9 @@ when its plugin unloads. Hover writes only local CoreGui UI and local preference
 Saved Workspace plates are disabled templates; their saved visibility flag preserves
 the existing explicit Hide setting. Automatic name changes update cached local names.
 
-## Approved parchment UI direction
+## Earlier parchment direction (superseded)
+
+This section records the previous revision. The medieval revision below replaces its layout and typography.
 
 The user approved the lighter parchment direction after a design subagent reviewed
 the references. Borrow compact alignment from the plugin reference and character
@@ -204,3 +211,84 @@ exact values and AP pips as style 8. Only surfaces, framing and name contrast ch
 Turn Watch remains top-of-screen text, hidden outside combat. D20 uses a framed
 writing-field result, ink selected mode, rust roll button and wrapping scrollable
 history. All updates use native Roblox GUI instances without downloaded assets.
+
+
+## Medieval combat revision · October 2026
+
+Dark binding surrounds two smoked-plum reading surfaces. Garamond is limited
+to the centered title and character names; controls and numbers remain SourceSans.
+A single open diamond interrupts the title rule. Major surfaces use fine inset
+edges and square corner marks. No rounded corners, gradients, external textures,
+gold badge or tagline. All motifs are original native GUI primitives.
+
+Turn status and Party / Enemy / End controls are fixed above the roster. Recovery
+is a closed-by-default disclosure immediately beneath them, with separate mana/AP
+amounts, selected recovery and an all-registered count. It never switches a turn.
+Search, roster and registration sit above the draggable divider. The selected
+character sheet contains three compact resource rows with preset adjustments and
+an aligned custom amount column. AP uses −1 / +1 / Refill AP so the compact labels
+stay readable. Permanent edits remain in Character details. The hover preference
+and two-line feedback stay at the bottom, outside both scrolling regions.
+
+At 330 × 640 with disclosures closed and the divider at its upper limit, all combat
+controls and the details disclosure fit. A 480px-high dock scrolls the editor. Taller
+windows allow more roster space; the divider clamps before consuming the combat
+editor. Opening Recovery reserves its own space and may require editor scrolling.
+
+Style 11 plates keep the previous world dimensions, maximum canvas, distance,
+attachments, owner identity, automatic naming and hover behavior. Only the palette, name
+strip, font and resource framing change. D20 has a shorter result well and a
+scrollable recent-roll list. Turn Watch remains plain text hidden outside combat.
+
+The change is built without Script Sync or installation while another Studio
+project is in use. The offline preview comes from the real constructor tree and
+approximates rendering. Live input, font metrics, world-space placement and native
+selection must still be checked in the intended Studio session before release.
+
+
+## World isolation
+
+A shared, explicit saved-place opt-in controls campaign activation. The combined
+plugin offers only its closed launcher in unmarked projects; no roster observers,
+hover viewer or DM menu constructors run there. The legacy Ledger exposes a small
+world setup button. A copied character never opts in a map.
+Turn Watch activates automatically for installed collaborators once the DM enables
+the map. Each collaborator still installs the viewer once; Team Create does not
+install Studio extensions. Exporting to a new place ID requires a deliberate enable.
+
+DM Ledger and D20 use closed defaults that override restored open state. Opening
+one is always a local explicit action. The world toggle enables/disables the suite
+for everyone with current plugins, without deleting characters or combat data.
+Changes and Undo/Redo start/stop owned sessions cleanly. Studio reserves native
+control IDs after destruction, so the plugin reuses its toolbar/action/widget
+handles, disables buttons and clears/hides window content while inactive.
+Those cached handles are destroyed only on plugin unload. This is workflow scope,
+not an editing permission boundary.
+
+
+## Single publishing asset
+
+Campaign Tools packages all features in one Script/plugin. Player-facing Turn Watch
+and hover stats are active by default inside an enabled world. A local DM controls
+toggle, off on first installation, enables Ledger/D20 and access to world setup.
+Menus still start closed. Explicit DM preference is remembered, while world activation
+is shared. This role setting is presentation/workflow, not a security boundary.
+
+One world-scoped lifecycle owns the sessions. Ledger and ViewerSession lease one
+hover controller for the same plugin Instance; turning DM controls off keeps the
+player viewer alive. The package is prepared for one asset upload and one update
+channel. It is not a Creator Store publication or an automatic installation.
+
+## Single-button launcher
+
+The combined build has one Campaign Tools toolbar button. A compact launcher holds
+local turn/hover switches, the DM role toggle, explicit Ledger/D20 opens and shared
+world activation. Player controls come first; DM actions are disabled until opted
+in. Inactive worlds keep the launcher available while feature actions stay disabled.
+Its square controls and restrained diamond divider reuse the ash/burgundy theme.
+
+All windows start closed, overriding restored visibility. Closing the launcher
+leaves player features running. Session controllers expose opens and preferences
+without creating individual toolbars in the combined build; standalone variants
+keep their existing controls. Role/world toggles reuse native IDs and never
+automatically reopen a DM menu.

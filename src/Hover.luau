@@ -5,7 +5,7 @@ local SETTING = "CampaignLedgerHoverOnly"
 local TAG = "CampaignLedgerGeneratedPlate"
 local CHARACTER_TAG = "CampaignLedgerCharacter"
 
-function Hover.start(plugin, onChanged)
+local function createController(plugin, onChanged)
  local core = game:GetService("CoreGui")
  local world = game:GetService("Workspace")
  local collection = game:GetService("CollectionService")
@@ -134,5 +134,32 @@ function Hover.start(plugin, onChanged)
   if owner and root and root.Parent then root:Destroy() end
  end
  return controller
+end
+-- A combined plugin has one owner Instance; its features share one renderer.
+local leases = {}
+function Hover.start(plugin, onChanged)
+ local entry = leases[plugin]
+ if not entry then
+  entry = { listeners = {} }
+  leases[plugin] = entry
+  entry.controller = createController(plugin, function(value)
+   for _, callback in pairs(entry.listeners) do if callback then callback(value) end end
+  end)
+ end
+ local lease, alive = {}, true
+ entry.listeners[lease] = onChanged or false
+ if onChanged then onChanged(entry.controller:getHoverOnly()) end
+ function lease:getHoverOnly() return entry.controller:getHoverOnly() end
+ function lease:setHoverOnly(value) if alive then entry.controller:setHoverOnly(value) end end
+ function lease:destroy()
+  if not alive then return end
+  alive = false
+  entry.listeners[self] = nil
+  if next(entry.listeners) == nil then
+   leases[plugin] = nil
+   entry.controller:destroy()
+  end
+ end
+ return lease
 end
 return Hover

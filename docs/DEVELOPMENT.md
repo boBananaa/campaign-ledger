@@ -4,22 +4,31 @@
 
 ## Build and checks
 
-Run `python3 scripts/build.py` to regenerate all three Luau bundles, all three .rbxmx
-files, synced Scripts and dist/CampaignLedger.zip. The archive contains the whole
-suite, source, documentation and tests; it excludes logs and temporary lock files.
+Run `python3 scripts/build.py` to build **CampaignTools**, the single publishable
+plugin, plus the three legacy standalone variants. It also updates Script Sync.
+`dist/CampaignTools.zip` contains exactly one installable plugin plus source, docs
+and tests. `CampaignLedger.zip` retains the legacy standalone package for compatibility.
+
+When another Studio project is open, use `python3 scripts/build.py --no-sync`.
+This updates only dist and its archive, leaving `DnD Test Scripts/` untouched.
+Neither build command installs or reloads local plugins. Installing a local plugin
+is a separate step that affects all Studio places on this Mac.
 
 Run each tests/*.spec.luau using the official Luau CLI, then run
 `python3 scripts/test_identity.py /path/to/luau` and
-`python3 scripts/test_hover.py /path/to/luau`. The current set contains
-233 passing checks: 52 resource, 23 name, 75 combat/layout/placement/dice/turn,
-23 identity/ownership, 13 controller/cleanup, 22 hover rules and 25 hover-controller
-checks. These include rotated and translated geometry, off-centre heads, compact
+`python3 scripts/test_hover.py /path/to/luau` and
+`python3 scripts/test_ui.py /path/to/luau` and
+`python3 scripts/test_scope.py /path/to/luau` and
+`python3 scripts/test_suite.py /path/to/luau`. The current set contains
+473 passing checks: 52 resource, 23 name, 171 combat/layout/placement/dice/turn,
+23 identity/ownership, 17 controller/cleanup, 22 hover rules, 30 hover-controller,
+43 UI workflow/layout, 50 world-isolation/bootstrap and 42 combined-suite checks. These include rotated and translated geometry, off-centre heads, compact
 vertical clearance, custom add/subtract amounts, maximum-only edits, divider limits,
 selection-button padding, advantage/disadvantage, manual recovery amounts, skipped
 resources, health preservation and hiding inactive turns.
-All three generated plugin sources compile. Pure rule modules pass static analysis.
+All four generated plugin sources compile. Pure rule modules pass static analysis.
 
-The controller regression harness executes the production Main callbacks and Plate
+The controller regression harness executes the production LedgerSession callbacks and Plate
 owner/cleanup functions against a small Studio API fake. It checks both removal
 orders, same-name survivors, cloned IDs, preserved stats, moved/duplicate plates and
 anchor cleanup. The fixture is harness input, not a standalone test or place script.
@@ -28,6 +37,17 @@ The hover harness executes the real local controller with deterministic engine A
 fakes. It checks local-only visibility, default and opt-out behavior, same-name
 owners, automatic-name refresh, template replacement, viewport/focus exit,
 preference persistence, shared renderer ownership, takeover and unload cleanup.
+
+The UI harness executes the production Panel, Theme, LauncherPanel and DicePanel constructors,
+button callbacks and layout functions with engine fakes. It covers compact sizing,
+resizing/divider limits, recovery scope, same-name selection, input preservation,
+Enter-to-save/roll, zero maxima and four-digit values, dice result bounds and cleanup.
+It does not model engine text metrics, native input routing or CoreGui layering.
+For a read-only offline preview, run `python3 scripts/test_ui.py /path/to/luau
+--snapshots /tmp/campaign-ui` (on one line), then
+`python3 scripts/preview_ui.py /tmp/campaign-ui`. Open the resulting review.html.
+The companion launcher.html shows player, DM and inactive-world launcher states.
+Fonts and layout in this preview are approximate; the real Studio check remains required.
 
 Live Studio QA is recorded separately in QA.md. Multi-user replication requires a
 second Team Create editor; a single local window is not evidence of that check.
@@ -76,7 +96,7 @@ rig inside a wrapper and rejects groups containing multiple humanoids.
 
 ## Saved character data
 
-Registration savesa CampaignLedgerState JSON attribute and CampaignLedgerCharacter
+Registration saves a CampaignLedgerState JSON attribute and CampaignLedgerCharacter
 collection tag. Copy the whole registered model between maps to carry its own stats
 and plate. No particular Workspace folder layout is required. Unregister removes only
 plugin-owned data and anchors; it preserves character geometry. Stats are independent
@@ -95,3 +115,59 @@ can still change place data: this is a DM workflow, not an access-control system
 
 See [BACKUPS.md](../BACKUPS.md). Plugin source control and release ZIPs do not replace
 separate `.rbxl` backups of maps, models and saved combat data.
+
+
+## World-scoped lifecycle
+
+WorldScope owns shared opt-in via ReplicatedStorage attributes
+`CampaignLedgerEnabled = true` and `CampaignLedgerPlaceId = game.PlaceId`.
+Positive integer IDs and explicit booleans are required. There is no implicit
+activation from registered characters or copied plates. Exporting under a new
+place ID requires explicit re-enabling; the saved old marker alone is inactive.
+
+Each plugin starts its session only inside that scope and returns its cleanup
+function. Scope changes are coalesced/deferred so constructors and automatic plate
+migration run after the enable recording finishes. Disable/Undo/ID changes tear
+sessions down; unload disconnects observers and cancels queued reactivation.
+The combined plugin leaves its closed launcher available outside the gate, without
+starting feature sessions. The legacy Ledger leaves a setup toolbar; legacy viewer
+and D20 create no UI outside scope. No plugin files, network downloads or settings are propagated to other
+computers. Party members install the bundled viewer themselves.
+
+All dock constructors use InitialEnabled=false and
+InitialEnabledShouldOverrideRestore=true. Session cleanup clears widget content, hides cached native widget handles, disables
+cached buttons and releases hover viewers/listeners. Native toolbars, actions and
+widget handles are reused for the plugin lifetime because Studio reserves their
+IDs after Destroy. Plugin unload destroys those handles once.
+The scope harness exercises the production module and all three entry points.
+It does not prove multi-user networking or native window restoration.
+
+
+## Combined plugin
+
+SuiteMain runs one WorldScope lifecycle for the plugin. ViewerSession always starts
+in enabled worlds. LedgerSession/DiceSession start only when the local
+`CampaignToolsDMEnabled` preference is explicitly true; fresh installation defaults
+false. The shared world flag never grants or changes that local role preference.
+Both DM windows still start closed, including when restoring an explicit DM preference.
+
+SuiteMain creates exactly one toolbar and button for the plugin lifetime. It opens
+LauncherPanel, which routes player preferences, the local DM role, shared world
+activation and explicit Ledger/D20 opens. Session modules accept `launcher = true`
+to suppress their standalone toolbars and return controllers alongside cleanup.
+The launcher starts closed and remains available outside the world scope. Closing
+it does not stop the viewer or change the role/world settings.
+
+Standalone entry files call the same session modules. Hover.start leases one real
+controller per plugin Instance, so Ledger and ViewerSession share one renderer and
+preference stream in the combined build. Releasing the Ledger lease leaves the player
+viewer active; the last lease tears down its controller. Native IDs remain cached
+by WorldScope across role/world changes. No additional external dependencies or
+network-based runtime loading are introduced.
+
+The suite harness executes the production bootstrap/session/hover code with engine
+fakes. It covers fresh player defaults, automatic party text and hover reveal,
+unchanged stats in player mode, DM toggles, preference persistence, a single pointer
+surface, one toolbar button in both roles, launcher settings/actions, closed menus,
+world/export gating, cached native IDs and complete unload. Native combined
+plugin installation and a multi-user check remain separate validation steps.

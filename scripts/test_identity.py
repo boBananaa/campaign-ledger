@@ -17,6 +17,7 @@ main = re.sub(r"^local \w+ = require\(script.Parent.\w+\)\n", "", main, flags=re
 fixture = (root / "tests/identity-runtime.fixture.luau").read_text()
 checks = r'''
 flush()
+check(#createdWidgets == 1 and createdWidgets[1].Enabled == false, "ledger does not restore an open menu on startup")
 local firstId, secondId = first:GetAttribute(Registry.idAttribute), second:GetAttribute(Registry.idAttribute)
 check(firstId ~= secondId, "controller assigns different identities to identical names")
 check(#entries == 2, "both same-name rows displayed")
@@ -43,9 +44,19 @@ captured.choose(first); flush(); captured.remove(); flush()
 check(#entries == 1 and entries[1].character == clone, "removing original leaves clone registered")
 captured.choose(clone); flush(); captured.remove(); flush()
 check(#entries == 0, "final removal leaves no stale rows")
+services.ReplicatedStorage:SetAttribute("CampaignLedgerEnabled", false); flush()
+check(not createdWidgets[1].Enabled, "disabling world hides cached ledger widget")
+services.ReplicatedStorage:SetAttribute("CampaignLedgerEnabled", true); flush()
+check(#createdWidgets == 1 and not createdWidgets[1].Enabled, "re-enabling reuses native handle with a closed fresh ledger")
+game.PlaceId = 999; game:GetPropertyChangedSignal("PlaceId"):Fire(); flush()
+check(not createdWidgets[1].Enabled, "copying the world to another place stops the ledger")
+plugin.Unloading:Fire(); flush()
 print("PASS: " .. count .. " controller removal and generated-plate cleanup checks")
 '''
-source = fixture + "\nlocal CollectionService = collection\n" + "\n".join(functions) + "\ndo\n" + main + "\nend\n" + checks
+scope = (root / "src/WorldScope.luau").read_text()
+session = (root / "src/LedgerSession.luau").read_text()
+session = re.sub(r"^local \w+ = require\(script.Parent.\w+\)\n", "", session, flags=re.M)
+source = fixture + "\nlocal WorldScope = (function()\n" + scope + "\nend)()\n" + "\nlocal LedgerSession = (function()\n" + session + "\nend)()\n" + "\nlocal CollectionService = collection\n" + "\n".join(functions) + "\ndo\n" + main + "\nend\n" + checks
 # Relative requires resolve beside the fixture. Always remove generated source, even on failure.
 with tempfile.NamedTemporaryFile(mode="w", suffix=".luau", prefix=".identity-runtime-", dir=root / "tests", delete=False) as file:
     file.write(source)

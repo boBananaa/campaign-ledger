@@ -2,19 +2,164 @@
 
 if not plugin then return end
 
+local WorldScope = (function()
+-- Shared opt-in belongs to a saved place. Plugin installation remains per editor.
+local WorldScope = {}
+WorldScope.enabledAttribute = "CampaignLedgerEnabled"
+WorldScope.placeAttribute = "CampaignLedgerPlaceId"
+
+function WorldScope.matches(placeId, enabled, assignedPlaceId)
+ return type(placeId) == "number" and placeId > 0 and placeId < math.huge and placeId % 1 == 0
+  and enabled == true and type(assignedPlaceId) == "number" and assignedPlaceId == placeId
+end
+
+function WorldScope.isEnabled()
+ local shared = game:GetService("ReplicatedStorage")
+ return WorldScope.matches(game.PlaceId, shared:GetAttribute(WorldScope.enabledAttribute), shared:GetAttribute(WorldScope.placeAttribute))
+end
+
+function WorldScope.setEnabled(plugin, enabled)
+ if game:GetService("RunService"):IsRunning() then return false, "Stop Play mode before changing the D&D world setting." end
+ if not WorldScope.matches(game.PlaceId, true, game.PlaceId) then
+  return false, "Save this place to Roblox first, then enable D&D here."
+ end
+ local history, shared = game:GetService("ChangeHistoryService"), game:GetService("ReplicatedStorage")
+ local recording = history:TryBeginRecording(enabled and "Enable D&D in this world" or "Disable D&D in this world")
+ if not recording then return false, "Finish the current Studio edit, then try again." end
+ local oldEnabled, oldPlace = shared:GetAttribute(WorldScope.enabledAttribute), shared:GetAttribute(WorldScope.placeAttribute)
+ local ok, message = pcall(function()
+  if enabled then shared:SetAttribute(WorldScope.placeAttribute, game.PlaceId) end
+  shared:SetAttribute(WorldScope.enabledAttribute, enabled == true)
+ end)
+ if not ok then
+  shared:SetAttribute(WorldScope.placeAttribute, oldPlace)
+  shared:SetAttribute(WorldScope.enabledAttribute, oldEnabled)
+ end
+ history:FinishRecording(recording, ok and Enum.FinishRecordingOperation.Commit or Enum.FinishRecordingOperation.Cancel)
+ return ok, message
+end
+
+-- Changes can arrive from another Team Create editor or Undo. Coalesce both attributes
+-- so activation never runs in the middle of the enable/disable undo recording.
+function WorldScope.watch(callback)
+ local shared = game:GetService("ReplicatedStorage")
+ local alive, queued, previous = true, false, nil
+ local function update()
+  if not alive then return end
+  local enabled = WorldScope.isEnabled()
+  if enabled ~= previous then previous = enabled; callback(enabled) end
+ end
+ local function schedule()
+  if queued or not alive then return end
+  queued = true
+  task.defer(function() queued = false; update() end)
+ end
+ local connections = {
+  shared:GetAttributeChangedSignal(WorldScope.enabledAttribute):Connect(schedule),
+  shared:GetAttributeChangedSignal(WorldScope.placeAttribute):Connect(schedule),
+  game:GetPropertyChangedSignal("PlaceId"):Connect(schedule),
+ }
+ update()
+ return function()
+  alive = false
+  for _, connection in ipairs(connections) do connection:Disconnect() end
+ end
+end
+
+-- Studio reserves toolbar/action IDs for the plugin lifetime even after Destroy.
+-- Reuse native handles across world toggles; pause their buttons and clear content.
+local resources = {}
+local function owned(plugin)
+ if not resources[plugin] then resources[plugin] = { toolbars = {}, buttons = {}, widgets = {}, actions = {} } end
+ return resources[plugin]
+end
+function WorldScope.toolbar(plugin, name)
+ local r = owned(plugin)
+ if not r.toolbars[name] then
+  r.toolbars[name] = plugin:CreateToolbar(name)
+  r.buttons[r.toolbars[name]] = {}
+ end
+ return r.toolbars[name]
+end
+function WorldScope.button(plugin, toolbar, id, tooltip, icon, text)
+ local buttons = owned(plugin).buttons[toolbar]
+ if not buttons[id] then buttons[id] = toolbar:CreateButton(id, tooltip, icon, text) end
+ buttons[id].Enabled = true
+ return buttons[id]
+end
+function WorldScope.pauseToolbar(plugin, toolbar)
+ for _, button in pairs(owned(plugin).buttons[toolbar]) do button:SetActive(false); button.Enabled = false end
+end
+function WorldScope.widget(plugin, id, info)
+ local r = owned(plugin)
+ if not r.widgets[id] then r.widgets[id] = plugin:CreateDockWidgetPluginGuiAsync(id, info) end
+ r.widgets[id].Enabled = false
+ return r.widgets[id]
+end
+function WorldScope.action(plugin, id, title, description, icon, allowBinding)
+ local actions = owned(plugin).actions
+ if not actions[id] then actions[id] = plugin:CreatePluginAction(id, title, description, icon, allowBinding) end
+ return actions[id]
+end
+local function dispose(plugin)
+ local r = resources[plugin]
+ if not r then return end
+ for _, widget in pairs(r.widgets) do widget:Destroy() end
+ for _, action in pairs(r.actions) do action:Destroy() end
+ for _, buttons in pairs(r.buttons) do for _, button in pairs(buttons) do button:Destroy() end end
+ for _, toolbar in pairs(r.toolbars) do toolbar:Destroy() end
+ resources[plugin] = nil
+end
+
+-- A session owns its widgets, hover viewer and listeners. Unmarked places get none.
+function WorldScope.run(plugin, startSession)
+ local stopSession, alive = nil, true
+ local function stop()
+  if stopSession then local cleanup = stopSession; stopSession = nil; cleanup() end
+ end
+ local stopWatching = WorldScope.watch(function(enabled)
+  if not alive then return end
+  if enabled and not stopSession then stopSession = startSession() elseif not enabled then stop() end
+ end)
+ local unloading
+ local function destroy()
+  if not alive then return end
+  alive = false
+  stopWatching(); stop(); dispose(plugin)
+  if unloading then unloading:Disconnect() end
+ end
+ unloading = plugin.Unloading:Connect(destroy)
+ return destroy
+end
+return WorldScope
+
+end)()
+
 local Theme = (function()
 local Theme = {}
+-- Approved palette C: ash and burgundy. Surfaces and text have separate roles.
 Theme.colors = {
-	base = Color3.fromRGB(193, 182, 167), surface = Color3.fromRGB(216, 205, 187),
-	field = Color3.fromRGB(229, 219, 201), text = Color3.fromRGB(56, 43, 34),
-	muted = Color3.fromRGB(91, 74, 61), hp = Color3.fromRGB(151, 55, 44),
-	mana = Color3.fromRGB(64, 91, 90), ap = Color3.fromRGB(106, 74, 42),
-	line = Color3.fromRGB(120, 99, 78), track = Color3.fromRGB(159, 145, 124),
-	accent = Color3.fromRGB(151, 55, 44),
+	base = Color3.fromRGB(40, 32, 42),
+	surface = Color3.fromRGB(60, 48, 59),
+	field = Color3.fromRGB(75, 59, 72),
+	text = Color3.fromRGB(238, 230, 225),
+	muted = Color3.fromRGB(197, 181, 192),
+	hp = Color3.fromRGB(231, 161, 161),
+	mana = Color3.fromRGB(182, 190, 223),
+	ap = Color3.fromRGB(218, 201, 176),
+	line = Color3.fromRGB(133, 108, 125),
+	track = Color3.fromRGB(40, 31, 40),
+	accent = Color3.fromRGB(213, 161, 178),
+	shell = Color3.fromRGB(37, 28, 37),
+	edge = Color3.fromRGB(110, 85, 103),
+	light = Color3.fromRGB(203, 188, 198),
+	selection = Color3.fromRGB(100, 67, 79),
+	active = Color3.fromRGB(107, 75, 90),
+	enemyActive = Color3.fromRGB(112, 68, 75),
 }
 Theme.font = Enum.Font.SourceSans
 Theme.bold = Enum.Font.SourceSansSemibold
-Theme.display = Enum.Font.Fondamento
+Theme.display = Enum.Font.Garamond
 
 function Theme.create(className, props, parent)
 	local object = Instance.new(className)
@@ -48,6 +193,23 @@ function Theme.corners(parent, color, length)
 	end
 end
 
+function Theme.junction(parent, y)
+	for _, side in ipairs({ { 0, 0 }, { 0.5, 12 } }) do
+		Theme.rule(parent, { BackgroundColor3 = Theme.colors.edge,
+			Position = UDim2.new(side[1], side[2], 0, y), Size = UDim2.new(0.5, -12, 0, 1) })
+	end
+	local diamond = Theme.create("Frame", { Name = "BindingJunction", BackgroundTransparency = 1,
+		BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, y),
+		Size = UDim2.fromOffset(5, 5), Rotation = 45, Active = false, Selectable = false }, parent)
+	Theme.stroke(diamond, Theme.colors.light)
+end
+
+function Theme.enable(button, enabled)
+	button:SetAttribute("ThemeEnabled", enabled)
+	button.Active, button.Selectable, button.Interactable = enabled, enabled, enabled
+	button.TextTransparency = enabled and 0 or 0.55
+end
+
 function Theme.label(parent, text, size, props)
 	local settings = { BackgroundTransparency = 1, BorderSizePixel = 0, Text = text,
 		TextColor3 = Theme.colors.text, TextSize = size or 16, Font = Theme.font,
@@ -59,14 +221,14 @@ end
 
 function Theme.select(button, selected, color)
 	button:SetAttribute("ThemeSelected", selected)
-	button:SetAttribute("ThemeSelectedColor", color or Theme.colors.text)
-	button.BackgroundColor3 = selected and (color or Theme.colors.text) or button:GetAttribute("ThemeBackground")
-	button.TextColor3 = selected and Theme.colors.field or button:GetAttribute("ThemeForeground")
-	button:FindFirstChildOfClass("UIStroke").Color = selected and (color or Theme.colors.text) or Theme.colors.line
+	button:SetAttribute("ThemeSelectedColor", color or Theme.colors.active)
+	button.BackgroundColor3 = selected and (color or Theme.colors.active) or button:GetAttribute("ThemeBackground")
+	button.TextColor3 = selected and Theme.colors.text or button:GetAttribute("ThemeForeground")
+	button:FindFirstChildOfClass("UIStroke").Color = Theme.colors.line
 end
 
 function Theme.button(parent, text, props)
-	local settings = { BackgroundColor3 = Theme.colors.surface, BorderSizePixel = 0,
+	local settings = { BackgroundColor3 = Theme.colors.field, BorderSizePixel = 0,
 		Text = text, TextColor3 = Theme.colors.text, TextSize = 16, Font = Theme.bold,
 		AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 32), Selectable = true }
 	for key, value in pairs(props or {}) do settings[key] = value end
@@ -76,10 +238,11 @@ function Theme.button(parent, text, props)
 	local stroke = Theme.stroke(button)
 	local hovered, focused = false, false
 	local function paint()
+		if button:GetAttribute("ThemeEnabled") == false then return end
 		local selected = button:GetAttribute("ThemeSelected")
 		local color = selected and button:GetAttribute("ThemeSelectedColor") or button:GetAttribute("ThemeBackground")
 		button.BackgroundColor3 = hovered and color:Lerp(Theme.colors.text, 0.08) or color
-		stroke.Color = (hovered or focused) and Theme.colors.accent or selected and color or Theme.colors.line
+		stroke.Color = (hovered or focused) and Theme.colors.accent or Theme.colors.line
 	end
 	button.MouseEnter:Connect(function() hovered = true; paint() end)
 	button.MouseLeave:Connect(function() hovered = false; paint() end)
@@ -132,71 +295,54 @@ return Dice
 
 end)()
 
-if not plugin then return end
+local DicePanel = (function()
 local Theme = Theme
 local Dice = Dice
 local C = Theme.colors
-local toolbar = plugin:CreateToolbar("Campaign D20")
-local toggle = toolbar:CreateButton("CampaignD20.Open", "Open the DM's D20 roller", "", "D20 Roller")
-toggle.ClickableWhenViewportHidden = true
-local widget = plugin:CreateDockWidgetPluginGuiAsync("CampaignD20.v1", DockWidgetPluginGuiInfo.new(
-	Enum.InitialDockState.Float, true, false, 380, 590, 320, 320))
-widget.Title = "D20 Roller"
-local viewport = Theme.create("ScrollingFrame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.base,
+local DicePanel = {}
+function DicePanel.new(widget, random)
+local viewport = Theme.create("ScrollingFrame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.shell,
 	BorderSizePixel = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap, ScrollingDirection = Enum.ScrollingDirection.Y }, widget)
-local root = Theme.create("Frame", { Name = "D20Roller", BackgroundTransparency = 1,
-	Size = UDim2.new(1, -4, 0, 610) }, viewport)
-Theme.label(root, "D20 Roller", 26, { Font = Theme.display, TextColor3 = C.accent,
+	ScrollBarThickness = 3, ScrollBarImageColor3 = C.light, ScrollingDirection = Enum.ScrollingDirection.Y }, widget)
+local root = Theme.create("Frame", { Name = "D20Roller", BorderSizePixel = 0, BackgroundColor3 = C.shell,
+	Size = UDim2.new(1, -4, 0, 453) }, viewport)
+Theme.label(root, "D20 Roller", 26, { Font = Theme.display, TextColor3 = C.text,
 	Position = UDim2.fromOffset(12, 10), Size = UDim2.new(1, -24, 0, 34), TextXAlignment = Enum.TextXAlignment.Center })
-Theme.rule(root, { Position = UDim2.fromOffset(12, 48), Size = UDim2.new(1, -24, 0, 1) })
-local mode, modes = "normal", {}
-local modeGroup = Theme.create("Frame", { BackgroundTransparency = 1, BorderSizePixel = 0,
-	Position = UDim2.fromOffset(12, 64), Size = UDim2.new(1, -24, 0, 32) }, root)
-for index, value in ipairs({ "normal", "advantage", "disadvantage" }) do
-	local label = value:sub(1, 1):upper() .. value:sub(2)
-	local button = Theme.button(modeGroup, label, { Position = UDim2.new((index - 1) / 3, (index - 1) * 2, 0, 0),
-		Size = UDim2.new(1 / 3, -4, 0, 32), TextSize = 14 })
-	modes[value] = button
-	button.Activated:Connect(function()
-		mode = value
-		for key, other in pairs(modes) do Theme.select(other, key == mode) end
-	end)
-end
-Theme.select(modes.normal, true)
-Theme.label(root, "Modifier", 16, { Position = UDim2.fromOffset(12, 109), Size = UDim2.new(1, -112, 0, 32) })
+local binding = Theme.create("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 48), Size = UDim2.new(1, -24, 0, 1) }, root)
+Theme.junction(binding, 0)
+Theme.label(root, "Modifier", 16, { TextColor3 = C.text, Position = UDim2.fromOffset(12, 64), Size = UDim2.new(1, -112, 0, 32) })
 local modifier = Theme.input(root, "+0", { Name = "Modifier", Text = "0", TextXAlignment = Enum.TextXAlignment.Center,
-	Position = UDim2.new(1, -100, 0, 109), Size = UDim2.fromOffset(88, 32) })
+	Position = UDim2.new(1, -100, 0, 64), Size = UDim2.fromOffset(88, 32) })
 local well = Theme.create("Frame", { Name = "RollResult", BackgroundColor3 = C.field, BorderSizePixel = 0,
-	Position = UDim2.fromOffset(12, 158), Size = UDim2.new(1, -24, 0, 198) }, root)
+	Position = UDim2.fromOffset(12, 113), Size = UDim2.new(1, -24, 0, 142) }, root)
 Theme.stroke(well)
 Theme.corners(well, C.accent, 12)
-local result = Theme.label(well, "—", 80, { Name = "Total", Font = Theme.bold, TextXAlignment = Enum.TextXAlignment.Center,
-	Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 98) })
+local result = Theme.label(well, "—", 64, { Name = "Total", Font = Theme.bold, TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 72) })
 local detail = Theme.label(well, "Roll when you’re ready.", 16, { Name = "Breakdown", TextWrapped = true,
 	TextTruncate = Enum.TextTruncate.None, TextXAlignment = Enum.TextXAlignment.Center,
-	Position = UDim2.fromOffset(12, 110), Size = UDim2.new(1, -24, 0, 46) })
+	Position = UDim2.fromOffset(12, 78), Size = UDim2.new(1, -24, 0, 32) })
 local natural = Theme.label(well, "", 18, { Name = "NaturalRoll", Font = Theme.bold, TextColor3 = C.accent,
-	TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(12, 164), Size = UDim2.new(1, -24, 0, 24) })
-local rollButton = Theme.button(root, "Roll D20", { BackgroundColor3 = C.accent, TextColor3 = C.field,
-	Position = UDim2.fromOffset(12, 368), Size = UDim2.new(1, -24, 0, 40), TextSize = 20 })
-Theme.rule(root, { Position = UDim2.fromOffset(12, 428), Size = UDim2.new(1, -24, 0, 1) })
-Theme.label(root, "Recent rolls", 17, { Font = Theme.bold, Position = UDim2.fromOffset(12, 438), Size = UDim2.new(1, -24, 0, 24) })
+	TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(12, 114), Size = UDim2.new(1, -24, 0, 24) })
+local rollButton = Theme.button(root, "Roll D20", { Name = "RollD20", BackgroundColor3 = C.active, TextColor3 = C.text,
+	Position = UDim2.fromOffset(12, 267), Size = UDim2.new(1, -24, 0, 40), TextSize = 20 })
+Theme.rule(root, { Position = UDim2.fromOffset(12, 319), Size = UDim2.new(1, -24, 0, 1) })
+Theme.label(root, "Recent rolls", 17, { Font = Theme.bold, TextColor3 = C.text, Position = UDim2.fromOffset(12, 329), Size = UDim2.new(1, -24, 0, 24) })
 local history = Theme.create("ScrollingFrame", { Name = "RollHistory", BackgroundTransparency = 1, BorderSizePixel = 0,
-	Position = UDim2.fromOffset(12, 470), Size = UDim2.new(1, -24, 0, 128), CanvasSize = UDim2.new(),
+	Position = UDim2.fromOffset(12, 359), Size = UDim2.new(1, -24, 0, 82), CanvasSize = UDim2.new(),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
-	ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, root)
+	ScrollBarThickness = 3, ScrollBarImageColor3 = C.light }, root)
 Theme.create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, history)
 local historyRows = {}
 local function drawHistory(recent)
 	for _, row in ipairs(historyRows) do row:Destroy() end
 	historyRows = {}
 	if #recent == 0 then
-		table.insert(historyRows, Theme.label(history, "No rolls yet.", 14, { TextColor3 = C.muted }))
+		table.insert(historyRows, Theme.label(history, "No rolls yet.", 14, { TextColor3 = C.light }))
 	end
 	for index, value in ipairs(recent) do
-		local row = Theme.label(history, value.mode .. ": " .. Dice.describe(value), 14, {
-			Name = "RecentRoll" .. index, TextColor3 = index == 1 and C.text or C.muted,
+		local row = Theme.label(history, Dice.describe(value), 14, {
+			Name = "RecentRoll" .. index, TextColor3 = index == 1 and C.text or C.light,
 			Font = index == 1 and Theme.bold or Theme.font, TextWrapped = true, TextTruncate = Enum.TextTruncate.None,
 			TextYAlignment = Enum.TextYAlignment.Top, LayoutOrder = index,
 			Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
@@ -204,10 +350,10 @@ local function drawHistory(recent)
 	end
 	history.CanvasPosition = Vector2.zero
 end
-local random, recent = Random.new(), {}
+local recent = {}
 drawHistory(recent)
 local function roll()
-	local value, message = Dice.roll(random, mode, modifier.Text)
+	local value, message = Dice.roll(random, "normal", modifier.Text)
 	if not value then detail.Text = message; detail.TextColor3 = C.hp; return end
 	result.Text = tostring(value.total)
 	detail.Text, detail.TextColor3 = Dice.describe(value), C.text
@@ -218,7 +364,48 @@ local function roll()
 end
 rollButton.Activated:Connect(roll)
 modifier.FocusLost:Connect(function(enter) if enter then roll() end end)
-toggle.Click:Connect(function() widget.Enabled = not widget.Enabled end)
-widget:GetPropertyChangedSignal("Enabled"):Connect(function() toggle:SetActive(widget.Enabled) end)
-toggle:SetActive(widget.Enabled)
-plugin.Unloading:Connect(function() widget:Destroy(); toolbar:Destroy() end)
+ return viewport
+end
+return DicePanel
+
+end)()
+
+local DiceSession = (function()
+local DicePanel = DicePanel
+local WorldScope = WorldScope
+local DiceSession = {}
+function DiceSession.start(plugin, options)
+ options = options or {}
+ local toolbar, toggle
+ if not options.launcher then
+  toolbar = WorldScope.toolbar(plugin, "Campaign D20")
+  toggle = WorldScope.button(plugin, toolbar, "CampaignD20.Open", "Open the DM's D20 roller", "", "D20 Roller")
+  toggle.ClickableWhenViewportHidden = true
+ end
+ local widget = WorldScope.widget(plugin, "CampaignD20.v1", DockWidgetPluginGuiInfo.new(
+  Enum.InitialDockState.Float, false, true, 380, 475, 320, 320))
+ widget.Title = "D20 Roller"
+ local content = DicePanel.new(widget, Random.new())
+ local click, visibility
+ if toggle then
+  click = toggle.Click:Connect(function() widget.Enabled = not widget.Enabled end)
+  visibility = widget:GetPropertyChangedSignal("Enabled"):Connect(function() toggle:SetActive(widget.Enabled) end)
+  toggle:SetActive(widget.Enabled)
+ end
+ local alive = true
+ local function stop()
+  alive = false
+  if click then click:Disconnect(); visibility:Disconnect() end
+  content:Destroy(); widget.Enabled = false
+  if toolbar then WorldScope.pauseToolbar(plugin, toolbar) end
+ end
+ return stop, { open = function() if alive then widget.Enabled = true end end }
+end
+return DiceSession
+
+end)()
+
+if not plugin then return end
+local WorldScope = WorldScope
+local DiceSession = DiceSession
+WorldScope.run(plugin, function() return DiceSession.start(plugin) end)

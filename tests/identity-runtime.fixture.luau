@@ -28,7 +28,7 @@ local function object(kind, name, parent)
  function o:GetAttributeChangedSignal(key) return self:GetPropertyChangedSignal("attr_" .. key) end
  function o:SetAttribute(key, value) self.attrs[key] = value; self:GetAttributeChangedSignal(key):Fire() end
  function o:HasTag(tag) return self.tags[tag] == true end
- function o:Destroy() for _, c in ipairs(self:GetChildren()) do c:Destroy() end; self.Parent = nil; self.tags = {} end
+ function o:Destroy() for _, c in ipairs(self:GetChildren()) do c:Destroy() end; self.Parent = nil; self.tags = {}; self.destroyed = true end
  return o
 end
 local workspace = object("Workspace", "Workspace")
@@ -52,7 +52,11 @@ function selection:Get() return self.objects end
 function selection:Set(value) self.objects = value; self.SelectionChanged:Fire() end
 local services = { Workspace = workspace, CollectionService = collection, HttpService = http, ChangeHistoryService = history,
  Selection = selection, ReplicatedStorage = object("ReplicatedStorage", "ReplicatedStorage"), RunService = { IsRunning = function() return false end } }
-local game = { GetService = function(_, key) return assert(services[key], key) end }
+local game = object("DataModel", "Game")
+game.PlaceId = 12345
+function game:GetService(key) return assert(services[key], key) end
+services.ReplicatedStorage:SetAttribute("CampaignLedgerEnabled", true)
+services.ReplicatedStorage:SetAttribute("CampaignLedgerPlaceId", game.PlaceId)
 local queued = {}
 local task = { defer = function(fn) table.insert(queued, fn) end }
 local function flush()
@@ -63,15 +67,33 @@ local plugin = object("Plugin", "Plugin")
 plugin.Unloading = signal()
 function plugin:GetSetting() end
 function plugin:SetSetting() end
-function plugin:CreateToolbar()
+local reservedButtons, reservedWidgets, reservedActions = {}, {}, {}
+function plugin:CreateToolbar(name)
  local t = {}; function t:Destroy() end
- function t:CreateButton() return { Click = signal(), SetActive = function() end } end
+ function t:CreateButton(id)
+  local key = name .. ":" .. id
+  assert(not reservedButtons[key], "Native toolbar ID remains reserved after Destroy: " .. key)
+  reservedButtons[key] = true
+  return { Click = signal(), SetActive = function() end, Destroy = function(self) self.destroyed = true end }
+ end
  return t
 end
-function plugin:CreateDockWidgetPluginGuiAsync() return object("DockWidgetPluginGui", "DM") end
-function plugin:CreatePluginAction() return { Triggered = signal() } end
+local createdWidgets = {}
+function plugin:CreateDockWidgetPluginGuiAsync(id, info)
+ assert(not reservedWidgets[id], "Native widget ID remains reserved after Destroy")
+ reservedWidgets[id] = true
+ local w = object("DockWidgetPluginGui", "DM")
+ -- Simulate a globally restored open widget. The constructor must override it.
+ w.Enabled = true
+ if info.InitialEnabledShouldOverrideRestore then w.Enabled = info.InitialEnabled end
+ table.insert(createdWidgets, w)
+ return w
+end
+function plugin:CreatePluginAction(id) assert(not reservedActions[id], "Native action ID remains reserved after Destroy"); reservedActions[id] = true; local action = object("PluginAction", "Action"); action.Triggered = signal(); return action end
 local Enum = { FinishRecordingOperation = { Commit = 1, Cancel = 2 }, InitialDockState = { Float = 1 }, ZIndexBehavior = { Sibling = 1 } }
-local DockWidgetPluginGuiInfo = { new = function() return {} end }
+local DockWidgetPluginGuiInfo = { new = function(_, enabled, override)
+ return { InitialEnabled = enabled, InitialEnabledShouldOverrideRestore = override }
+end }
 local Names = { apply = function(_, state) return state end, observe = function() return { Disconnect = function() end } end,
  resolve = function(character) return character.Name end }
 local Turn = { attribute = "CampaignLedgerTurn", view = function(value) return tostring(value) end }

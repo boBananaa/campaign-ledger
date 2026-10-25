@@ -22,8 +22,8 @@ check(State.setMaximum(state, "hp", "-1") == nil, "reject negative maximum")
 check(State.setMaximum(state, "hp", "99999") == nil, "reject huge maximum")
 check(Layout.editorPadding >= 2, "selection stroke has padding above scroll boundary")
 check(Layout.selectButtonTop + Layout.selectButtonHeight < Layout.headingHeight, "selection button inside its own row")
-check(Layout.split(640, 99999) == 380, "splitter preserves editor space")
-check(Layout.split(640, -99999) == 200, "splitter preserves roster space")
+check(Layout.split(640, 99999) == 256, "splitter preserves editor space")
+check(Layout.split(640, -99999) == 256, "splitter preserves roster space")
 check(Layout.split(760, 284) == 284, "default split stable")
 
 local identity = { 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1 }
@@ -88,4 +88,15 @@ end
 check(State.recover(spent, "0", "0") == nil, "both zero rejected")
 check(Turn.isActive("party") and Turn.isActive("enemy"), "active sides show overlay")
 check(not Turn.isActive(nil) and not Turn.isActive("idle") and not Turn.isActive("corrupt"), "inactive and unknown states hide overlay")
+for _, height in ipairs({ 480, 640, 760, 1000 }) do
+ for _, recoveryOpen in ipairs({ false, true }) do
+  for _, requested in ipairs({ -9999, 284, 99999 }) do
+   local geometry = Layout.geometry(height, requested, recoveryOpen)
+   check(geometry.rosterHeight >= 44, "roster retains at least one row")
+   check(geometry.register >= geometry.roster + geometry.rosterHeight + 6, "register stays below roster")
+   check(geometry.editor > geometry.split + 12 and geometry.editorHeight > 0, "divider and editor remain separate")
+   check(geometry.editor + geometry.editorHeight <= height - Layout.editorBottom, "footer never overlaps editor")
+  end
+ end
+end
 print("PASS: " .. count .. " combat UI, placement, dice and turn checks")

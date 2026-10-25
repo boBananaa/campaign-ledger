@@ -2,11 +2,141 @@
 
 ## Automated checks
 
-233 checks pass with the official Luau CLI: 52 combat-state, 23 name-resolver,
-75 combat/layout/placement/dice/turn, 23 identity/ownership, 13 controller/cleanup,
-22 hover-rule and 25 hover-controller checks. All three standalone plugins compile.
+473 checks pass with the official Luau CLI: 52 combat-state, 23 name-resolver,
+171 combat/layout/placement/dice/turn, 23 identity/ownership, 17 controller/cleanup,
+22 hover-rule, 30 hover-controller, 43 UI workflow/layout, 50 world-isolation/bootstrap
+and 42 combined-suite checks. All four generated plugins compile.
 The pure modules pass static analysis. Archive integrity and bundle/source matching
 are checked by the build workflow.
+
+## Single-button launcher revision · 2026-10-24
+
+- Combined Campaign Tools now creates exactly one native toolbar/button. Its closed
+  launcher holds turn/hover switches, the local DM toggle, shared world activation
+  and Open Ledger/Open D20. Standalone variants retain their own toolbars.
+- Production bootstrap checks assert one toolbar/button in player and DM modes,
+  explicit menu opens, closed startup/re-enable, local role persistence, world
+  isolation, settings actions and cleanup. Closing the launcher leaves the viewer
+  active; DM remains off on first install and player features auto-start in scope.
+- Constructor checks cover disabled actions, player/DM/inactive states and the
+  minimum 320 × 420 content area. An offline rendering of these states was inspected;
+  it approximates text/layout and does not establish native Studio input or font fit.
+- Built without Script Sync, installation, publication or changes to live places.
+  No installed plugin files were removed or replaced by this revision. Republish the updated
+  CampaignTools Script over the existing asset to distribute this revision.
+
+## Simplified D20 revision · 2026-10-24
+
+- Removed the Normal/Advantage/Disadvantage selector and moved the remaining controls
+  upward. Each roll uses one D20 plus the signed modifier. The default roller window
+  and content are 45px shorter; recent rolls omit the redundant normal-mode prefix.
+- Updated the existing production-UI checks to verify positive/negative modifiers,
+  exactly one random draw per roll, Enter-to-roll and natural-20 display.
+- Rebuilt the combined publishing file and legacy variants. Installed plugins and
+  the published Roblox asset are unchanged until the owner updates that asset.
+
+## Combined publishing build · 2026-10-24
+
+- CampaignTools.rbxmx contains one Script with Ledger, D20 and Turn Watch bundled
+  together. The primary ZIP has one installable plugin, plus sources/docs/tests.
+  It is prepared for one Roblox asset upload; no upload or publication was performed.
+- Fresh installation defaults to player mode: Turn Watch and the hover renderer
+  start automatically in an enabled world. DM Ledger/D20 sessions are absent until
+  DM controls is enabled locally. Both DM windows then start closed.
+- Refactored the existing controllers into LedgerSession, DiceSession and
+  ViewerSession, reused by the combined and legacy entry points. No resource/identity
+  formats or shared world flags changed. Hover now leases one controller per plugin
+  Instance so combined features cannot create duplicate pointer surfaces.
+- Production-code harnesses check player startup, hovered stats, turn text,
+  read-only player state, DM role changes, remembered preference, shared hover
+  ownership, cached native IDs, scope/export changes and unload. All 456 checks pass.
+- Existing installed standalone plugins, Script Sync and live Studio places remain
+  untouched for this packaging change. The combined plugin has not been installed
+  or visually tested in native Studio. Migration requires unloading/removing the old
+  standalone copies; multi-user behavior and the chest-selection report remain unverified.
+
+## World-isolation revision · 2026-10-24
+
+- Root cause in source: Ledger and D20 used InitialEnabled=true and allowed Studio
+  to restore previous widget visibility. Both now start closed and override restore.
+- WorldScope gates all three entry points on explicit shared activation matching
+  the saved place ID. Registered models alone cannot opt in a place. Only a small
+  DM setup button is created outside scope; the viewer/D20 create no UI there.
+- Production-controller checks simulate restored-open menus, world enable/disable,
+  copied characters, new place IDs, re-enabling after export, no duplicate startup,
+  Undo-style scope changes, unloading and queued changes after cleanup. All 417 checks
+  pass. Constructors/entry points are engine fakes; this is not a native multi-window
+  or multi-user Studio check.
+- Installed all three updated local plugins with byte-for-byte dist verification;
+  previous copies are backed up under ignored backups/plugins-before-world-isolation-20261024-201420.
+  Script Sync files and global settings are unchanged. No extra Studio was opened.
+- At the user's request, enabled the current test place 99379788858744 with a
+  dedicated undo recording. Direct readback confirms explicit enable and matching
+  place ID. All three character state strings/IDs and the idle phase are unchanged.
+- The initial command could not nest an undo recording inside the connector's command
+  recording. A short deferred task acquired its own recording after that command
+  finished; no edit was made when recording was unavailable.
+- First native disable/re-enable found that Studio reserves toolbar button IDs even
+  after the controls are destroyed. Explicit button destruction did not free them in
+  a temporary native probe. The corrected design caches native toolbar, action and
+  widget handles for the plugin lifetime, disables/clears them while inactive and
+  destroys them on unload. The fakes now retain IDs to reproduce this constraint.
+- After the user's second reload, all three running sources matched the corrected
+  lifecycle. Both native DockWidgetPluginGuis were present with Enabled=false.
+- A reversible live disable removed the hover root and turn overlay; both cached
+  widgets had Enabled=false and zero children. Re-enable restored one content root
+  in each widget and the shared hover viewer while both menus stayed closed.
+- Final direct readback confirms the test world remains enabled for place ID
+  99379788858744, with every character state string/ID and the idle phase unchanged.
+  Separate-instance startup and multi-user replication remain unverified.
+
+## Palette C installation · 2026-10-23
+
+- At the user's request, replaced all three local plugin files with the approved
+  Ash & burgundy build. Previous copies and hashes are saved under the ignored
+  backups/plugins-before-ash-burgundy-20261023-215955 folder.
+- Studio reconnected to the same place (99379788858744). Direct inspection confirmed
+  all three loaded plugin sources contain the approved palette, and all three owned
+  overhead plates use style 11. A screenshot visibly confirmed the new overhead
+  palette and updated Turn Watch text in the existing place.
+- Exact state strings and IDs for all three characters were compared before/after;
+  health, mana, AP, maximums, names, offsets and visibility are unchanged. The shared
+  phase remains enemy. Both same-name Assata entries are still present.
+- Automated native clicks could not trigger the reload menu; installation was
+  confirmed only after Studio reconnected with the new running sources. No extra
+  Studio session was launched by this task. Script Sync and global settings were
+  left unchanged. No Git commit or publication was performed.
+- This confirms installation and the observed overhead/turn display. Full live
+  interaction, panel text-fit, camera sweep and multi-user checks remain pending.
+
+## Medieval UI test build · 2026-10-23
+
+- Initial source/dist verification ran on `codex/medieval-combat-ui` before
+  installation. At that stage the connector returned no instances and installed
+  plugins were untouched. The later installation is recorded above.
+- Approved palette C (Ash & burgundy) is applied to Ledger, D20, Turn Watch
+  and style 11 overhead plates. Selection fills are separated from pale text and
+  resource colors. Twelve text/background combinations were calculated above 5.3:1
+  contrast; disabled text and borders are outside that check.
+- The updated compact/wide/recovery/D20 constructor-tree preview was rendered and
+  inspected after applying C. This remains an approximation, not a Studio check.
+- The production Panel/Theme/DicePanel constructors and callbacks run in an engine
+  fake. Checks cover global turns without selection; manual recovery targeting;
+  duplicate-name selection; quick/custom deltas; focused input preservation;
+  details, maximum save, Enter-to-roll, natural 20, resize/divider bounds and unload.
+- At 330 × 640, the calculated content fits with both disclosures closed. Layout
+  checks cover 480/640/760/1000px heights and collapsed/expanded Recovery. At minimum
+  height the editor scrolls; expanded Recovery leaves a smaller editor viewport.
+- Offline snapshots of compact/wide, recovery, details, empty and long-name /
+  9999 / zero-maximum states were rendered and inspected. These export the real
+  constructor tree but approximate fonts and engine layout; they are not Studio screenshots.
+- Luna performed a simulated DM walkthrough. Its findings led to shorter AP presets,
+  a custom amount cue, an explicit selection arrow and the all-recovery count.
+  A second pass found no blocking issue in the approximation. This is not human testing.
+- Pending: real Studio font/text-fit, clicks/tab focus, drag and scrolling, overhead
+  plate close/far placement, native model selection and Turn Watch layering. Prior
+  live checks below apply to earlier revisions, not this build. The reported chest
+  selection issue remains unresolved. No claim of new multi-user validation.
 
 ## Studio checks completed in the user's existing session
 

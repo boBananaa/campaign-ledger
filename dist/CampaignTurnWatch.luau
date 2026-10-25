@@ -2,19 +2,164 @@
 
 if not plugin then return end
 
+local WorldScope = (function()
+-- Shared opt-in belongs to a saved place. Plugin installation remains per editor.
+local WorldScope = {}
+WorldScope.enabledAttribute = "CampaignLedgerEnabled"
+WorldScope.placeAttribute = "CampaignLedgerPlaceId"
+
+function WorldScope.matches(placeId, enabled, assignedPlaceId)
+ return type(placeId) == "number" and placeId > 0 and placeId < math.huge and placeId % 1 == 0
+  and enabled == true and type(assignedPlaceId) == "number" and assignedPlaceId == placeId
+end
+
+function WorldScope.isEnabled()
+ local shared = game:GetService("ReplicatedStorage")
+ return WorldScope.matches(game.PlaceId, shared:GetAttribute(WorldScope.enabledAttribute), shared:GetAttribute(WorldScope.placeAttribute))
+end
+
+function WorldScope.setEnabled(plugin, enabled)
+ if game:GetService("RunService"):IsRunning() then return false, "Stop Play mode before changing the D&D world setting." end
+ if not WorldScope.matches(game.PlaceId, true, game.PlaceId) then
+  return false, "Save this place to Roblox first, then enable D&D here."
+ end
+ local history, shared = game:GetService("ChangeHistoryService"), game:GetService("ReplicatedStorage")
+ local recording = history:TryBeginRecording(enabled and "Enable D&D in this world" or "Disable D&D in this world")
+ if not recording then return false, "Finish the current Studio edit, then try again." end
+ local oldEnabled, oldPlace = shared:GetAttribute(WorldScope.enabledAttribute), shared:GetAttribute(WorldScope.placeAttribute)
+ local ok, message = pcall(function()
+  if enabled then shared:SetAttribute(WorldScope.placeAttribute, game.PlaceId) end
+  shared:SetAttribute(WorldScope.enabledAttribute, enabled == true)
+ end)
+ if not ok then
+  shared:SetAttribute(WorldScope.placeAttribute, oldPlace)
+  shared:SetAttribute(WorldScope.enabledAttribute, oldEnabled)
+ end
+ history:FinishRecording(recording, ok and Enum.FinishRecordingOperation.Commit or Enum.FinishRecordingOperation.Cancel)
+ return ok, message
+end
+
+-- Changes can arrive from another Team Create editor or Undo. Coalesce both attributes
+-- so activation never runs in the middle of the enable/disable undo recording.
+function WorldScope.watch(callback)
+ local shared = game:GetService("ReplicatedStorage")
+ local alive, queued, previous = true, false, nil
+ local function update()
+  if not alive then return end
+  local enabled = WorldScope.isEnabled()
+  if enabled ~= previous then previous = enabled; callback(enabled) end
+ end
+ local function schedule()
+  if queued or not alive then return end
+  queued = true
+  task.defer(function() queued = false; update() end)
+ end
+ local connections = {
+  shared:GetAttributeChangedSignal(WorldScope.enabledAttribute):Connect(schedule),
+  shared:GetAttributeChangedSignal(WorldScope.placeAttribute):Connect(schedule),
+  game:GetPropertyChangedSignal("PlaceId"):Connect(schedule),
+ }
+ update()
+ return function()
+  alive = false
+  for _, connection in ipairs(connections) do connection:Disconnect() end
+ end
+end
+
+-- Studio reserves toolbar/action IDs for the plugin lifetime even after Destroy.
+-- Reuse native handles across world toggles; pause their buttons and clear content.
+local resources = {}
+local function owned(plugin)
+ if not resources[plugin] then resources[plugin] = { toolbars = {}, buttons = {}, widgets = {}, actions = {} } end
+ return resources[plugin]
+end
+function WorldScope.toolbar(plugin, name)
+ local r = owned(plugin)
+ if not r.toolbars[name] then
+  r.toolbars[name] = plugin:CreateToolbar(name)
+  r.buttons[r.toolbars[name]] = {}
+ end
+ return r.toolbars[name]
+end
+function WorldScope.button(plugin, toolbar, id, tooltip, icon, text)
+ local buttons = owned(plugin).buttons[toolbar]
+ if not buttons[id] then buttons[id] = toolbar:CreateButton(id, tooltip, icon, text) end
+ buttons[id].Enabled = true
+ return buttons[id]
+end
+function WorldScope.pauseToolbar(plugin, toolbar)
+ for _, button in pairs(owned(plugin).buttons[toolbar]) do button:SetActive(false); button.Enabled = false end
+end
+function WorldScope.widget(plugin, id, info)
+ local r = owned(plugin)
+ if not r.widgets[id] then r.widgets[id] = plugin:CreateDockWidgetPluginGuiAsync(id, info) end
+ r.widgets[id].Enabled = false
+ return r.widgets[id]
+end
+function WorldScope.action(plugin, id, title, description, icon, allowBinding)
+ local actions = owned(plugin).actions
+ if not actions[id] then actions[id] = plugin:CreatePluginAction(id, title, description, icon, allowBinding) end
+ return actions[id]
+end
+local function dispose(plugin)
+ local r = resources[plugin]
+ if not r then return end
+ for _, widget in pairs(r.widgets) do widget:Destroy() end
+ for _, action in pairs(r.actions) do action:Destroy() end
+ for _, buttons in pairs(r.buttons) do for _, button in pairs(buttons) do button:Destroy() end end
+ for _, toolbar in pairs(r.toolbars) do toolbar:Destroy() end
+ resources[plugin] = nil
+end
+
+-- A session owns its widgets, hover viewer and listeners. Unmarked places get none.
+function WorldScope.run(plugin, startSession)
+ local stopSession, alive = nil, true
+ local function stop()
+  if stopSession then local cleanup = stopSession; stopSession = nil; cleanup() end
+ end
+ local stopWatching = WorldScope.watch(function(enabled)
+  if not alive then return end
+  if enabled and not stopSession then stopSession = startSession() elseif not enabled then stop() end
+ end)
+ local unloading
+ local function destroy()
+  if not alive then return end
+  alive = false
+  stopWatching(); stop(); dispose(plugin)
+  if unloading then unloading:Disconnect() end
+ end
+ unloading = plugin.Unloading:Connect(destroy)
+ return destroy
+end
+return WorldScope
+
+end)()
+
 local Theme = (function()
 local Theme = {}
+-- Approved palette C: ash and burgundy. Surfaces and text have separate roles.
 Theme.colors = {
-	base = Color3.fromRGB(193, 182, 167), surface = Color3.fromRGB(216, 205, 187),
-	field = Color3.fromRGB(229, 219, 201), text = Color3.fromRGB(56, 43, 34),
-	muted = Color3.fromRGB(91, 74, 61), hp = Color3.fromRGB(151, 55, 44),
-	mana = Color3.fromRGB(64, 91, 90), ap = Color3.fromRGB(106, 74, 42),
-	line = Color3.fromRGB(120, 99, 78), track = Color3.fromRGB(159, 145, 124),
-	accent = Color3.fromRGB(151, 55, 44),
+	base = Color3.fromRGB(40, 32, 42),
+	surface = Color3.fromRGB(60, 48, 59),
+	field = Color3.fromRGB(75, 59, 72),
+	text = Color3.fromRGB(238, 230, 225),
+	muted = Color3.fromRGB(197, 181, 192),
+	hp = Color3.fromRGB(231, 161, 161),
+	mana = Color3.fromRGB(182, 190, 223),
+	ap = Color3.fromRGB(218, 201, 176),
+	line = Color3.fromRGB(133, 108, 125),
+	track = Color3.fromRGB(40, 31, 40),
+	accent = Color3.fromRGB(213, 161, 178),
+	shell = Color3.fromRGB(37, 28, 37),
+	edge = Color3.fromRGB(110, 85, 103),
+	light = Color3.fromRGB(203, 188, 198),
+	selection = Color3.fromRGB(100, 67, 79),
+	active = Color3.fromRGB(107, 75, 90),
+	enemyActive = Color3.fromRGB(112, 68, 75),
 }
 Theme.font = Enum.Font.SourceSans
 Theme.bold = Enum.Font.SourceSansSemibold
-Theme.display = Enum.Font.Fondamento
+Theme.display = Enum.Font.Garamond
 
 function Theme.create(className, props, parent)
 	local object = Instance.new(className)
@@ -48,6 +193,23 @@ function Theme.corners(parent, color, length)
 	end
 end
 
+function Theme.junction(parent, y)
+	for _, side in ipairs({ { 0, 0 }, { 0.5, 12 } }) do
+		Theme.rule(parent, { BackgroundColor3 = Theme.colors.edge,
+			Position = UDim2.new(side[1], side[2], 0, y), Size = UDim2.new(0.5, -12, 0, 1) })
+	end
+	local diamond = Theme.create("Frame", { Name = "BindingJunction", BackgroundTransparency = 1,
+		BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, y),
+		Size = UDim2.fromOffset(5, 5), Rotation = 45, Active = false, Selectable = false }, parent)
+	Theme.stroke(diamond, Theme.colors.light)
+end
+
+function Theme.enable(button, enabled)
+	button:SetAttribute("ThemeEnabled", enabled)
+	button.Active, button.Selectable, button.Interactable = enabled, enabled, enabled
+	button.TextTransparency = enabled and 0 or 0.55
+end
+
 function Theme.label(parent, text, size, props)
 	local settings = { BackgroundTransparency = 1, BorderSizePixel = 0, Text = text,
 		TextColor3 = Theme.colors.text, TextSize = size or 16, Font = Theme.font,
@@ -59,14 +221,14 @@ end
 
 function Theme.select(button, selected, color)
 	button:SetAttribute("ThemeSelected", selected)
-	button:SetAttribute("ThemeSelectedColor", color or Theme.colors.text)
-	button.BackgroundColor3 = selected and (color or Theme.colors.text) or button:GetAttribute("ThemeBackground")
-	button.TextColor3 = selected and Theme.colors.field or button:GetAttribute("ThemeForeground")
-	button:FindFirstChildOfClass("UIStroke").Color = selected and (color or Theme.colors.text) or Theme.colors.line
+	button:SetAttribute("ThemeSelectedColor", color or Theme.colors.active)
+	button.BackgroundColor3 = selected and (color or Theme.colors.active) or button:GetAttribute("ThemeBackground")
+	button.TextColor3 = selected and Theme.colors.text or button:GetAttribute("ThemeForeground")
+	button:FindFirstChildOfClass("UIStroke").Color = Theme.colors.line
 end
 
 function Theme.button(parent, text, props)
-	local settings = { BackgroundColor3 = Theme.colors.surface, BorderSizePixel = 0,
+	local settings = { BackgroundColor3 = Theme.colors.field, BorderSizePixel = 0,
 		Text = text, TextColor3 = Theme.colors.text, TextSize = 16, Font = Theme.bold,
 		AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 32), Selectable = true }
 	for key, value in pairs(props or {}) do settings[key] = value end
@@ -76,10 +238,11 @@ function Theme.button(parent, text, props)
 	local stroke = Theme.stroke(button)
 	local hovered, focused = false, false
 	local function paint()
+		if button:GetAttribute("ThemeEnabled") == false then return end
 		local selected = button:GetAttribute("ThemeSelected")
 		local color = selected and button:GetAttribute("ThemeSelectedColor") or button:GetAttribute("ThemeBackground")
 		button.BackgroundColor3 = hovered and color:Lerp(Theme.colors.text, 0.08) or color
-		stroke.Color = (hovered or focused) and Theme.colors.accent or selected and color or Theme.colors.line
+		stroke.Color = (hovered or focused) and Theme.colors.accent or Theme.colors.line
 	end
 	button.MouseEnter:Connect(function() hovered = true; paint() end)
 	button.MouseLeave:Connect(function() hovered = false; paint() end)
@@ -155,7 +318,7 @@ local SETTING = "CampaignLedgerHoverOnly"
 local TAG = "CampaignLedgerGeneratedPlate"
 local CHARACTER_TAG = "CampaignLedgerCharacter"
 
-function Hover.start(plugin, onChanged)
+local function createController(plugin, onChanged)
  local core = game:GetService("CoreGui")
  local world = game:GetService("Workspace")
  local collection = game:GetService("CollectionService")
@@ -285,25 +448,66 @@ function Hover.start(plugin, onChanged)
  end
  return controller
 end
+-- A combined plugin has one owner Instance; its features share one renderer.
+local leases = {}
+function Hover.start(plugin, onChanged)
+ local entry = leases[plugin]
+ if not entry then
+  entry = { listeners = {} }
+  leases[plugin] = entry
+  entry.controller = createController(plugin, function(value)
+   for _, callback in pairs(entry.listeners) do if callback then callback(value) end end
+  end)
+ end
+ local lease, alive = {}, true
+ entry.listeners[lease] = onChanged or false
+ if onChanged then onChanged(entry.controller:getHoverOnly()) end
+ function lease:getHoverOnly() return entry.controller:getHoverOnly() end
+ function lease:setHoverOnly(value) if alive then entry.controller:setHoverOnly(value) end end
+ function lease:destroy()
+  if not alive then return end
+  alive = false
+  entry.listeners[self] = nil
+  if next(entry.listeners) == nil then
+   leases[plugin] = nil
+   entry.controller:destroy()
+  end
+ end
+ return lease
+end
 return Hover
 
 end)()
 
-if not plugin then return end
+local ViewerSession = (function()
+local WorldScope = WorldScope
+local ViewerSession = {}
+function ViewerSession.start(plugin, options)
+options = options or {}
 local Theme = Theme
 local Turn = Turn
 local Hover = Hover
 local C = Theme.colors
 local shared = game:GetService("ReplicatedStorage")
 local coreGui = game:GetService("CoreGui")
-local toolbar = plugin:CreateToolbar("Campaign Turn Watch")
-local toggle = toolbar:CreateButton("CampaignTurnWatch.Open", "Show or hide combat turn text", "", "Turn Watch")
-toggle.ClickableWhenViewportHidden = true
-local hoverToggle = toolbar:CreateButton("CampaignTurnWatch.Hover", "Show character stats only while hovering", "", "Hover plates")
-hoverToggle.ClickableWhenViewportHidden = true
-local hover = Hover.start(plugin, function(value) hoverToggle:SetActive(value) end)
-hoverToggle:SetActive(hover:getHoverOnly())
-hoverToggle.Click:Connect(function() hover:setHoverOnly(not hover:getHoverOnly()) end)
+local toolbar, toggle, hoverToggle
+if not options.launcher then
+ toolbar = WorldScope.toolbar(plugin, "Campaign Turn Watch")
+ toggle = WorldScope.button(plugin, toolbar, "CampaignTurnWatch.Open", "Show or hide combat turn text", "", "Turn Watch")
+ toggle.ClickableWhenViewportHidden = true
+ hoverToggle = WorldScope.button(plugin, toolbar, "CampaignTurnWatch.Hover", "Show character stats only while hovering", "", "Hover plates")
+ hoverToggle.ClickableWhenViewportHidden = true
+end
+local function changed() if options.onChanged then options.onChanged() end end
+local hover = Hover.start(plugin, function(value)
+ if hoverToggle then hoverToggle:SetActive(value) end
+ changed()
+end)
+local hoverClick
+if hoverToggle then
+ hoverToggle:SetActive(hover:getHoverOnly())
+ hoverClick = hoverToggle.Click:Connect(function() hover:setHoverOnly(not hover:getHoverOnly()) end)
+end
 local overlayName = "CampaignLedgerTurnOverlay"
 local previous = coreGui:FindFirstChild(overlayName)
 if previous and previous:GetAttribute("CampaignLedgerOwned") then previous:Destroy() end
@@ -313,7 +517,7 @@ local overlay = Theme.create("ScreenGui", { Name = overlayName, Enabled = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling })
 overlay:SetAttribute("CampaignLedgerOwned", true)
 local phase = Theme.label(overlay, "", 28, { Name = "CombatTurn", Font = Theme.display,
-	TextColor3 = C.field, TextStrokeColor3 = C.text, TextStrokeTransparency = 0.15,
+	TextColor3 = C.text, TextStrokeColor3 = C.shell, TextStrokeTransparency = 0.15,
 	TextXAlignment = Enum.TextXAlignment.Center, TextTruncate = Enum.TextTruncate.None,
 	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 16),
 	Size = UDim2.new(1, -32, 0, 40), Active = false, Selectable = false })
@@ -324,9 +528,34 @@ local function refresh()
 	local title = Turn.view(side)
 	phase.Text = title
 	overlay.Enabled = visible and Turn.isActive(side)
-	toggle:SetActive(visible)
+	if toggle then toggle:SetActive(visible) end
+ changed()
 end
 local connection = shared:GetAttributeChangedSignal(Turn.attribute):Connect(refresh)
-toggle.Click:Connect(function() visible = not visible; refresh() end)
+local toggleClick
+if toggle then toggleClick = toggle.Click:Connect(function() visible = not visible; refresh() end) end
 refresh()
-plugin.Unloading:Connect(function() connection:Disconnect(); hover:destroy(); overlay:Destroy(); toolbar:Destroy() end)
+local alive = true
+local function stop()
+ alive = false
+ connection:Disconnect()
+ if hoverClick then hoverClick:Disconnect() end
+ if toggleClick then toggleClick:Disconnect() end
+ hover:destroy(); overlay:Destroy()
+ if toolbar then WorldScope.pauseToolbar(plugin, toolbar) end
+end
+return stop, {
+ getVisible = function() return visible end,
+ setVisible = function(value) if alive then visible = value == true; refresh() end end,
+ getHoverOnly = function() return hover:getHoverOnly() end,
+ setHoverOnly = function(value) if alive then hover:setHoverOnly(value) end end,
+}
+end
+return ViewerSession
+
+end)()
+
+if not plugin then return end
+local WorldScope = WorldScope
+local ViewerSession = ViewerSession
+WorldScope.run(plugin, function() return ViewerSession.start(plugin) end)

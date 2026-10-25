@@ -17,119 +17,125 @@ end
 
 function Panel.new(widget, actions)
  local self = setmetatable({ actions = actions, fields = {}, rows = {}, turnButtons = {}, connections = {}, expanded = false }, Panel)
- self.viewport = Theme.create("ScrollingFrame", { Name = "LedgerViewport", BackgroundColor3 = C.base,
-  BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), CanvasSize = UDim2.new(),
-  AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
-  ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, widget)
- self.root = frame(self.viewport, { Name = "CampaignLedger", BackgroundTransparency = 0,
-  BackgroundColor3 = C.base, Size = UDim2.new(1, -4, 0, 640) })
- Theme.label(self.root, "Campaign Ledger", 26, { Font = Theme.display, TextColor3 = C.accent,
-  Position = UDim2.fromOffset(12, 10), Size = UDim2.new(1, -24, 0, 34), TextXAlignment = Enum.TextXAlignment.Center })
- Theme.rule(self.root, { Position = UDim2.fromOffset(12, 48), Size = UDim2.new(1, -24, 0, 1) })
- self.search = Theme.input(self.root, "Search characters…", { Position = UDim2.fromOffset(12, 58), Size = UDim2.new(1, -24, 0, 32) })
+ self.viewport = frame(widget, { Name = "LedgerViewport", BackgroundTransparency = 0,
+  BackgroundColor3 = C.shell, Size = UDim2.fromScale(1, 1) })
+ self.root = frame(self.viewport, { Name = "CampaignLedger", Size = UDim2.fromScale(1, 1) })
+ Theme.label(self.root, "Campaign Ledger", 28, { Font = Theme.display, TextColor3 = C.text,
+  Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 32), TextXAlignment = Enum.TextXAlignment.Center })
+ local binding = frame(self.root, { Position = UDim2.fromOffset(12, 44), Size = UDim2.new(1, -24, 0, 1) })
+ Theme.junction(binding, 0)
+ self.turnRow = frame(self.root, { Name = "CombatTurn", Position = UDim2.fromOffset(12, 50), Size = UDim2.new(1, -24, 0, 84) })
+ self.turnTitle = Theme.label(self.turnRow, "No active combat", 14, { Font = Theme.bold, TextColor3 = C.light,
+  Size = UDim2.new(1, 0, 0, 18) })
+ for index, spec in ipairs({ { "Party turn", "party" }, { "Enemy turn", "enemy" }, { "End combat", "idle" } }) do
+  local button = Theme.button(self.turnRow, spec[1], { Name = "Turn_" .. spec[2],
+   BackgroundColor3 = C.shell, TextColor3 = C.text, Position = UDim2.new((index - 1) / 3, (index - 1) * 2, 0, 24),
+   Size = UDim2.new(1 / 3, -4, 0, 28), TextSize = 14 })
+  button.Activated:Connect(function() actions.setTurn(spec[2]) end)
+  self.turnButtons[spec[2]] = button
+ end
+ self.recoveryToggle = Theme.button(self.turnRow, "+ Recovery", { Name = "RecoveryToggle", TextSize = 14,
+  TextXAlignment = Enum.TextXAlignment.Left, BackgroundColor3 = C.shell, TextColor3 = C.light,
+  Position = UDim2.fromOffset(0, 58), Size = UDim2.new(1, 0, 0, 26) })
+ Theme.create("UIPadding", { PaddingLeft = UDim.new(0, 8) }, self.recoveryToggle)
+ self.recovery = frame(self.root, { Name = "Recovery", Visible = false, BackgroundTransparency = 0,
+  BackgroundColor3 = C.surface, Position = UDim2.fromOffset(12, 138), Size = UDim2.new(1, -24, 0, 96) })
+ local recovery = actions.loadRecovery()
+ for index, spec in ipairs({ { "Mana to add", "mana" }, { "AP to add", "ap" } }) do
+  Theme.label(self.recovery, spec[1], 14, { Font = Theme.bold, TextColor3 = C[spec[2]],
+   Position = UDim2.new((index - 1) / 2, 8, 0, 4), Size = UDim2.new(0.5, -16, 0, 18) })
+ end
+ self.manaRecovery = Theme.input(self.recovery, "0–9999", { Name = "ManaRecovery", Text = tostring(recovery.mana),
+  Position = UDim2.fromOffset(8, 24), Size = UDim2.new(0.5, -12, 0, 26) })
+ self.apRecovery = Theme.input(self.recovery, "0–9999", { Name = "ActionRecovery", Text = tostring(recovery.ap),
+  Position = UDim2.new(0.5, 4, 0, 24), Size = UDim2.new(0.5, -12, 0, 26) })
+ for index, spec in ipairs({ { "Recover selected", false }, { "Recover all models", true } }) do
+  local button = Theme.button(self.recovery, spec[1], { Name = spec[2] and "RecoverAll" or "RecoverSelected",
+   Position = UDim2.new((index - 1) / 2, index == 1 and 8 or 4, 0, 54),
+   Size = UDim2.new(0.5, -12, 0, 26), TextSize = 14 })
+  button.Activated:Connect(function() actions.recover(self.manaRecovery.Text, self.apRecovery.Text, spec[2]) end)
+  if spec[2] then self.recoverAll = button else self.recoverSelected = button end
+ end
+ Theme.label(self.recovery, "Manual recovery · caps at maximum · 0 skips", 13, { TextColor3 = C.muted,
+  Position = UDim2.fromOffset(8, 80), Size = UDim2.new(1, -16, 0, 16) })
+ self.search = Theme.input(self.root, "Search characters…", { Position = UDim2.fromOffset(12, 140), Size = UDim2.new(1, -24, 0, 28) })
  self.search:GetPropertyChangedSignal("Text"):Connect(function() self:drawRoster() end)
- self.roster = Theme.create("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0,
-  Position = UDim2.fromOffset(12, 98), Size = UDim2.new(1, -24, 0, 130), CanvasSize = UDim2.new(),
+ self.roster = Theme.create("ScrollingFrame", { Name = "CharacterRoster", BackgroundColor3 = C.surface, BorderSizePixel = 0,
+  Position = UDim2.fromOffset(12, 174), Size = UDim2.new(1, -24, 0, 130), CanvasSize = UDim2.new(),
   AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
   ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
+ Theme.stroke(self.roster, C.edge)
  stack(self.roster, 2)
- self.register = Theme.button(self.root, "+ Register selected character", { TextColor3 = C.accent })
+ self.register = Theme.button(self.root, "+ Register selected model", { Name = "RegisterCharacter", BackgroundColor3 = C.shell, TextColor3 = C.text, TextSize = 14 })
  self.register.Activated:Connect(actions.register)
  self.divider = Theme.create("TextButton", { Name = "RosterDivider", Text = "", AutoButtonColor = false,
-  BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, -24, 0, 18), Selectable = false }, self.root)
- Theme.rule(self.divider, { Position = UDim2.fromOffset(0, 8) })
- frame(self.divider, { BackgroundTransparency = 0, BackgroundColor3 = C.base,
-  Position = UDim2.new(0.5, -27, 0, 0), Size = UDim2.fromOffset(54, 18) })
+  BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, -24, 0, 12), Selectable = false }, self.root)
+ Theme.rule(self.divider, { Position = UDim2.fromOffset(0, 5) })
+ frame(self.divider, { BackgroundTransparency = 0, BackgroundColor3 = C.shell,
+  Position = UDim2.new(0.5, -27, 0, 0), Size = UDim2.fromOffset(54, 12) })
  for _, x in ipairs({ -16, -4, 8 }) do
-  Theme.rule(self.divider, { BackgroundColor3 = C.muted, Position = UDim2.new(0.5, x, 0, 6), Size = UDim2.fromOffset(8, 3) })
+  Theme.rule(self.divider, { BackgroundColor3 = C.muted, Position = UDim2.new(0.5, x, 0, 4), Size = UDim2.fromOffset(8, 2) })
  end
- self.editor = Theme.create("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0,
+ self.editor = Theme.create("ScrollingFrame", { Name = "CharacterEditor", BackgroundColor3 = C.surface, BorderSizePixel = 0,
   CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
   ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
- self.content = frame(self.editor, { Size = UDim2.new(1, -8, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
+ Theme.stroke(self.editor, C.edge)
+ Theme.corners(self.editor, C.light, 9)
+ self.content = frame(self.editor, { Size = UDim2.new(1, -6, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
  Theme.create("UIPadding", { PaddingTop = UDim.new(0, Layout.editorPadding), PaddingBottom = UDim.new(0, 8),
-  PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2) }, self.content)
- stack(self.content, 10)
+  PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 4) }, self.content)
+ stack(self.content, 6)
  self.empty = Theme.label(self.content, "Select a model and register it to begin.", 17, { LayoutOrder = 0,
   TextColor3 = C.muted, TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Size = UDim2.new(1, 0, 0, 70) })
  self.heading = frame(self.content, { Size = UDim2.new(1, 0, 0, Layout.headingHeight), LayoutOrder = 1 })
  local nameBand = frame(self.heading, { Name = "CharacterHeading", BackgroundTransparency = 0,
-  BackgroundColor3 = C.text, Position = UDim2.fromOffset(0, 2), Size = UDim2.new(1, 0, 0, 34) })
- Theme.corners(nameBand, C.accent, 7)
- self.title = Theme.label(nameBand, "", 22, { Name = "SelectedCharacterName", Font = Theme.display, TextColor3 = C.field,
-  Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0) })
- Theme.button(self.heading, "Select model", { Position = UDim2.new(1, -110, 0, Layout.selectButtonTop),
-  Size = UDim2.fromOffset(110, Layout.selectButtonHeight), TextSize = 15 }).Activated:Connect(actions.selectModel)
+  BackgroundColor3 = C.surface, Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 24) })
+ self.title = Theme.label(nameBand, "", 22, { Name = "SelectedCharacterName", Font = Theme.display, TextColor3 = C.text,
+  Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0) })
+ Theme.button(self.heading, "Select model in map", { Name = "SelectModel", BackgroundColor3 = C.surface, Position = UDim2.new(0, 0, 0, Layout.selectButtonTop),
+  Size = UDim2.fromOffset(140, Layout.selectButtonHeight), TextSize = 13 }).Activated:Connect(actions.selectModel)
+ Theme.label(self.heading, "Custom amount ↓", 12, { TextColor3 = C.muted, Position = UDim2.new(0.5, 0, 0, 26),
+  Size = UDim2.new(0.5, 0, 0, 20) })
  for index, key in ipairs(State.resources) do
-  local row = frame(self.content, { Name = key .. "Combat", LayoutOrder = index + 1, Size = UDim2.new(1, 0, 0, 104) })
-  Theme.label(row, State.labels[key], 18, { Font = Theme.bold, TextColor3 = C[key], Size = UDim2.new(1, -154, 0, 30) })
-  local current = Theme.label(row, "", 28, { Name = key .. "Current", Font = Theme.bold,
-   Position = UDim2.new(1, -154, 0, -1), Size = UDim2.fromOffset(84, 32), TextXAlignment = Enum.TextXAlignment.Right })
-  local maximum = Theme.label(row, "", 16, { Name = key .. "Maximum", TextColor3 = C.muted,
-   Position = UDim2.new(1, -65, 0, 5), Size = UDim2.fromOffset(65, 24), TextXAlignment = Enum.TextXAlignment.Right })
+  local row = frame(self.content, { Name = key .. "Combat", LayoutOrder = index + 1, Size = UDim2.new(1, 0, 0, Layout.resourceHeight) })
+  Theme.label(row, State.labels[key], 16, { Font = Theme.bold, TextColor3 = C[key], Size = UDim2.new(1, -158, 0, 24) })
+  local current = Theme.label(row, "", 24, { Name = key .. "Current", Font = Theme.bold,
+   Position = UDim2.new(1, -150, 0, -1), Size = UDim2.fromOffset(82, 26), TextXAlignment = Enum.TextXAlignment.Right })
+  local maximum = Theme.label(row, "", 15, { Name = key .. "Maximum", TextColor3 = C.muted,
+   Position = UDim2.new(1, -64, 0, 2), Size = UDim2.fromOffset(64, 22), TextXAlignment = Enum.TextXAlignment.Right })
   local track = frame(row, { Name = key .. "Track", BackgroundTransparency = 0, BackgroundColor3 = C.track,
-   Position = UDim2.fromOffset(0, 32), Size = UDim2.new(1, 0, 0, 3) })
+   Position = UDim2.fromOffset(0, 27), Size = UDim2.new(1, 0, 0, 4) })
+  Theme.stroke(track)
   local fill = frame(track, { Name = "Fill", BackgroundTransparency = 0, BackgroundColor3 = C[key], Size = UDim2.fromScale(1, 1) })
-  local amountGroup = frame(row, { Position = UDim2.fromOffset(0, 42), Size = UDim2.new(0.4, -6, 0, 30) })
-  Theme.label(amountGroup, "Amount", 14, { TextColor3 = C.muted, Size = UDim2.fromOffset(46, 30) })
-  local amount = Theme.input(amountGroup, "1", { Text = "1", TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center,
-   Position = UDim2.fromOffset(48, 0), Size = UDim2.new(1, -48, 1, 0) })
-  Theme.button(row, "Subtract", { Position = UDim2.new(0.4, 0, 0, 42), Size = UDim2.new(0.3, -4, 0, 30),
-   TextSize = 15, TextColor3 = C[key] }).Activated:Connect(function() actions.adjustAmount(key, amount.Text, -1) end)
-  Theme.button(row, "Add", { Position = UDim2.new(0.7, 2, 0, 42), Size = UDim2.new(0.3, -2, 0, 30),
-   TextSize = 15, TextColor3 = C[key] }).Activated:Connect(function() actions.adjustAmount(key, amount.Text, 1) end)
-  if key == "ap" then
-   local specs = { { "Spend 1", -1 }, { "Refund 1", 1 }, { "Refill AP", 0 } }
-   for i, spec in ipairs(specs) do
-    Theme.button(row, spec[1], { Position = UDim2.new((i - 1) / 3, (i - 1) * 2, 0, 78),
-     Size = UDim2.new(1 / 3, -4, 0, 26), TextSize = 14 }).Activated:Connect(function()
-      if spec[2] == 0 then actions.newTurn() else actions.adjust(key, spec[2]) end
-     end)
-   end
-  else
-   for i, delta in ipairs({ -5, -1, 1, 5 }) do
-    Theme.button(row, (delta > 0 and "+" or "−") .. math.abs(delta), { Position = UDim2.new((i - 1) / 4, (i - 1) * 1.5, 0, 78),
-     Size = UDim2.new(0.25, -4.5, 0, 26), TextSize = 15 }).Activated:Connect(function() actions.adjust(key, delta) end)
-   end
+  local presets = frame(row, { Position = UDim2.fromOffset(0, 36), Size = UDim2.new(0.5, -6, 0, 28) })
+  local specs = key == "ap" and { { "−1", -1 }, { "+1", 1 }, { "Refill AP", 0 } }
+   or { { "−5", -5 }, { "−1", -1 }, { "+1", 1 }, { "+5", 5 } }
+  for i, spec in ipairs(specs) do
+   Theme.button(presets, spec[1], { Name = key .. "Preset" .. i,
+    Position = UDim2.new(key == "ap" and (i == 3 and 0.5 or (i - 1) * 0.25) or (i - 1) / #specs, 0, 0, 0),
+    Size = UDim2.new(key == "ap" and (i == 3 and 0.5 or 0.25) or 1 / #specs, -3, 1, 0),
+    TextSize = key == "ap" and 12 or 15 }).Activated:Connect(function()
+     if key == "ap" and spec[2] == 0 then actions.newTurn() else actions.adjust(key, spec[2]) end
+    end)
   end
+  local amount = Theme.input(row, "Amt", { Name = key .. "Amount", Text = "1", TextSize = 15,
+   TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.new(0.5, 0, 0, 36), Size = UDim2.new(0.13, -2, 0, 28) })
+  -- Narrow numeric wells need all four digits, without the usual text padding.
+  local padding = amount:FindFirstChildOfClass("UIPadding")
+  padding.PaddingLeft, padding.PaddingRight = UDim.new(0, 1), UDim.new(0, 1)
+  Theme.button(row, "Subtract", { Name = key .. "Subtract", Position = UDim2.new(0.63, 3, 0, 36),
+   Size = UDim2.new(0.23, -5, 0, 28), TextSize = 13 }).Activated:Connect(function() actions.adjustAmount(key, amount.Text, -1) end)
+  Theme.button(row, "Add", { Name = key .. "Add", Position = UDim2.new(0.86, 2, 0, 36),
+   Size = UDim2.new(0.14, -2, 0, 28), TextSize = 13 }).Activated:Connect(function() actions.adjustAmount(key, amount.Text, 1) end)
   self.fields[key] = { row = row, current = current, summaryMaximum = maximum, fill = fill, amount = amount }
  end
- self.turnRow = frame(self.content, { Name = "CombatTurn", LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 224) })
- Theme.rule(self.turnRow)
- self.turnTitle = Theme.label(self.turnRow, "No active combat", 20, { Font = Theme.bold,
-  Position = UDim2.fromOffset(0, 9), Size = UDim2.new(1, 0, 0, 26) })
- for index, spec in ipairs({ { "Party turn", "party" }, { "Enemy turn", "enemy" }, { "End combat", "idle" } }) do
-  local button = Theme.button(self.turnRow, spec[1], { Position = UDim2.new((index - 1) / 3, (index - 1) * 2, 0, 41),
-   Size = UDim2.new(1 / 3, -4, 0, 30), TextSize = 14 })
-  button.Activated:Connect(function() actions.setTurn(spec[2]) end)
-  self.turnButtons[spec[2]] = button
- end
- local recovery = actions.loadRecovery()
- Theme.label(self.turnRow, "Turn recovery", 17, { Font = Theme.bold,
-  Position = UDim2.fromOffset(0, 87), Size = UDim2.new(1, 0, 0, 24) })
- Theme.label(self.turnRow, "Mana to add", 14, { TextColor3 = C.mana,
-  Position = UDim2.fromOffset(0, 115), Size = UDim2.new(0.5, -5, 0, 20) })
- Theme.label(self.turnRow, "Actions to add", 14, { TextColor3 = C.ap,
-  Position = UDim2.new(0.5, 3, 0, 115), Size = UDim2.new(0.5, -3, 0, 20) })
- local manaRecovery = Theme.input(self.turnRow, "0–9999", { Name = "ManaRecovery", Text = tostring(recovery.mana),
-  Position = UDim2.fromOffset(0, 138), Size = UDim2.new(0.5, -3, 0, 30) })
- local apRecovery = Theme.input(self.turnRow, "0–9999", { Name = "ActionRecovery", Text = tostring(recovery.ap),
-  Position = UDim2.new(0.5, 3, 0, 138), Size = UDim2.new(0.5, -3, 0, 30) })
- for index, spec in ipairs({ { "Refill selected", false }, { "Refill all characters", true } }) do
-  Theme.button(self.turnRow, spec[1], { Position = UDim2.new((index - 1) * 0.5, (index - 1) * 3, 0, 176),
-   Size = UDim2.new(0.5, -3, 0, 30), TextSize = 14 }).Activated:Connect(function()
-    actions.recover(manaRecovery.Text, apRecovery.Text, spec[2])
-   end)
- end
- Theme.label(self.turnRow, "Caps at maximums. Set 0 to skip a resource.", 13, { TextColor3 = C.muted,
-  Position = UDim2.fromOffset(0, 208), Size = UDim2.new(1, 0, 0, 16) })
- self.advancedToggle = Theme.button(self.content, "Expand maximums and settings", { LayoutOrder = 6, TextSize = 15 })
+ self.advancedToggle = Theme.button(self.content, "+ Character details · maximums & settings", { Name = "CharacterDetails", LayoutOrder = 6, TextSize = 14, Size = UDim2.new(1, 0, 0, 28) })
  self.advanced = frame(self.content, { LayoutOrder = 7, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 0), Visible = false })
  stack(self.advanced, 12)
  self.advancedToggle.Activated:Connect(function()
   self.expanded = not self.expanded
   self.advanced.Visible = self.expanded and self.selected ~= nil
-  self.advancedToggle.Text = self.expanded and "Collapse maximums and settings" or "Expand maximums and settings"
+  self.advancedToggle.Text = self.expanded and "− Character details · maximums & settings" or "+ Character details · maximums & settings"
  end)
  for index, key in ipairs(State.resources) do
   local row = frame(self.advanced, { LayoutOrder = index, Size = UDim2.new(1, 0, 0, 62) })
@@ -162,27 +168,32 @@ function Panel.new(widget, actions)
   TextColor3 = C.muted }).Activated:Connect(actions.remove)
  Theme.label(self.advanced, "Lowering a maximum clamps the current value. Studio Undo reverts edits.", 14, {
   LayoutOrder = 11, TextColor3 = C.muted, TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Size = UDim2.new(1, 0, 0, 42) })
- local display = frame(self.content, { Name = "DisplaySettings", LayoutOrder = 8, Size = UDim2.new(1, 0, 0, 62) })
- Theme.rule(display)
- self.hoverToggle = Theme.button(display, "Hover-only plates: On", { Position = UDim2.fromOffset(0, 10), TextSize = 15 })
+ self.hoverToggle = Theme.button(self.root, "Hover plates: On", { Name = "HoverPreference", BackgroundColor3 = C.shell,
+  TextColor3 = C.light, Position = UDim2.new(0, 12, 1, -60), Size = UDim2.new(1, -24, 0, 26), TextSize = 14 })
  self.hoverToggle.Activated:Connect(actions.toggleHoverOnly)
- Theme.label(display, "Display preference for this Studio window.", 13, { TextColor3 = C.muted,
-  Position = UDim2.fromOffset(0, 44), Size = UDim2.new(1, 0, 0, 18) })
- self.footer = Theme.label(self.root, "Select a model to begin.", 14, { TextColor3 = C.muted,
-  Position = UDim2.new(0, 12, 1, -30), Size = UDim2.new(1, -24, 0, 24) })
- Theme.rule(self.root, { Position = UDim2.new(0, 12, 1, -36), Size = UDim2.new(1, -24, 0, 1) })
- self.split = actions.loadDivider() or 284
+ self.footer = Theme.label(self.root, "Type an amount, then Subtract or Add.", 13, { TextColor3 = C.light,
+  TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Position = UDim2.new(0, 12, 1, -30), Size = UDim2.new(1, -24, 0, 28) })
+ self.split = actions.loadDivider() or Layout.minimumSplit
  local function layout()
-  local height = math.max(640, self.viewport.AbsoluteSize.Y)
-  self.root.Size = UDim2.new(1, -4, 0, height)
-  self.split = Layout.split(height, self.split)
-  self.roster.Size = UDim2.new(1, -24, 0, self.split - 148)
-  self.register.Position, self.register.Size = UDim2.fromOffset(12, self.split - 42), UDim2.new(1, -24, 0, 32)
-  self.divider.Position = UDim2.fromOffset(12, self.split)
-  self.editor.Position = UDim2.fromOffset(12, self.split + 20)
-  self.editor.Size = UDim2.new(1, -24, 1, -self.split - 64)
+  local height = math.max(480, self.viewport.AbsoluteSize.Y)
+  local extra = self.recoveryOpen and Layout.recoveryHeight or 0
+  local geometry = Layout.geometry(height, self.split + extra, self.recoveryOpen)
+  self.split = geometry.split - extra
+  self.search.Position = UDim2.fromOffset(12, geometry.search)
+  self.roster.Position = UDim2.fromOffset(12, geometry.roster)
+  self.roster.Size = UDim2.new(1, -24, 0, geometry.rosterHeight)
+  self.register.Position, self.register.Size = UDim2.fromOffset(12, geometry.register), UDim2.new(1, -24, 0, 28)
+  self.divider.Position = UDim2.fromOffset(12, geometry.split)
+  self.editor.Position = UDim2.fromOffset(12, geometry.editor)
+  self.editor.Size = UDim2.new(1, -24, 0, geometry.editorHeight)
  end
- self.viewport:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
+ table.insert(self.connections, self.viewport:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout))
+ self.recoveryToggle.Activated:Connect(function()
+  self.recoveryOpen = not self.recoveryOpen
+  self.recovery.Visible = self.recoveryOpen
+  self.recoveryToggle.Text = self.recoveryOpen and "− Recovery" or "+ Recovery"
+  layout()
+ end)
  local dragStartY, dragStartSplit
  local detector = Theme.create("UIDragDetector", { DragStyle = Enum.UIDragDetectorDragStyle.TranslateLine,
   DragAxis = Vector2.new(0, 1), ResponseStyle = Enum.UIDragDetectorResponseStyle.CustomOffset }, self.divider)
@@ -209,23 +220,23 @@ function Panel.new(widget, actions)
 end
 
 function Panel:updateHoverOnly(value)
- self.hoverToggle.Text = value and "Hover-only plates: On" or "Hover-only plates: Off"
- Theme.select(self.hoverToggle, value, C.mana)
+ self.hoverToggle.Text = value and "Hover plates: On · this window" or "Hover plates: Off · this window"
+ Theme.select(self.hoverToggle, value, C.active)
 end
 function Panel:notify(message, isError)
- self.footer.Text, self.footer.TextColor3 = message, isError and C.hp or C.muted
+ self.footer.Text, self.footer.TextColor3 = (isError and "Error: " or "") .. message, isError and C.hp or C.light
 end
 function Panel:updateTurn(value)
- local title, _, color = Turn.view(value)
- self.turnTitle.Text, self.turnTitle.TextColor3 = title, C[color]
+ local title = Turn.view(value)
+ self.turnTitle.Text, self.turnTitle.TextColor3 = title, C.text
  for side, button in pairs(self.turnButtons) do
-  Theme.select(button, side == value and side ~= "idle", side == "party" and C.mana or C.hp)
+  Theme.select(button, side == value and side ~= "idle", side == "party" and C.active or C.enemyActive)
  end
 end
 function Panel:destroy()
  self.stopDrag()
  for _, connection in ipairs(self.connections) do connection:Disconnect() end
- self.root:Destroy()
+ self.viewport:Destroy()
 end
 function Panel:drawRoster()
  for _, row in ipairs(self.rows) do row:Destroy() end
@@ -237,24 +248,26 @@ function Panel:drawRoster()
    shown += 1
    local active = entry.character == self.selected
    local button = Theme.create("TextButton", { Name = "Character_" .. (entry.id or tostring(shown)), Text = "", BorderSizePixel = 0,
-    BackgroundColor3 = active and C.text or C.surface, BackgroundTransparency = active and 0 or 1,
-    AutoButtonColor = false, Size = UDim2.new(1, -5, 0, 48), LayoutOrder = shown, Selectable = true }, self.roster)
+    BackgroundColor3 = active and C.selection or C.field, BackgroundTransparency = active and 0 or 0.65,
+    AutoButtonColor = false, Size = UDim2.new(1, -5, 0, 42), LayoutOrder = shown, Selectable = true }, self.roster)
    if active then frame(button, { BackgroundTransparency = 0, BackgroundColor3 = C.accent,
     Size = UDim2.new(0, 3, 1, 0) }) end
-   Theme.label(button, name, 18, { Font = Theme.display, TextColor3 = active and C.field or C.text,
-    Position = UDim2.fromOffset(10, 1), Size = UDim2.new(1, -20, 0, 24) })
+   Theme.label(button, name, 18, { Font = Theme.display, TextColor3 = C.text,
+    Position = UDim2.fromOffset(10, 1), Size = UDim2.new(1, -42, 0, 24) })
+   if active then Theme.label(button, "›", 24, { TextColor3 = C.text, Font = Theme.bold,
+    Position = UDim2.new(1, -25, 0, 4), Size = UDim2.fromOffset(20, 28), TextXAlignment = Enum.TextXAlignment.Center }) end
    if entry.state then
     for index, key in ipairs(State.resources) do
      local label = key == "ap" and "AP" or State.labels[key]
-     Theme.label(button, label .. " " .. entry.state[key].current, 13, { TextColor3 = active and C.surface or C[key],
-      Position = UDim2.new((index - 1) / 3, 10, 0, 26), Size = UDim2.new(1 / 3, -12, 0, 18) })
+     Theme.label(button, label .. " " .. entry.state[key].current, 13, { TextColor3 = active and C.text or C[key],
+      Position = UDim2.new((index - 1) / 3, 10, 0, 23), Size = UDim2.new(1 / 3, -12, 0, 18) })
     end
    else
-    Theme.label(button, "Stats need repair", 13, { TextColor3 = active and C.surface or C.hp,
-     Position = UDim2.fromOffset(10, 26), Size = UDim2.new(1, -20, 0, 18) })
+    Theme.label(button, "Stats need repair", 13, { TextColor3 = C.hp,
+     Position = UDim2.fromOffset(10, 23), Size = UDim2.new(1, -20, 0, 18) })
    end
    button.Activated:Connect(function() self.actions.choose(entry.character) end)
-   local function highlight(value) button.BackgroundTransparency = active and 0 or value and 0.35 or 1 end
+   local function highlight(value) button.BackgroundTransparency = active and 0 or value and 0 or 0.65 end
    button.MouseEnter:Connect(function() highlight(true) end)
    button.MouseLeave:Connect(function() highlight(false) end)
    button.SelectionGained:Connect(function() highlight(true) end)
@@ -271,11 +284,13 @@ function Panel:refresh(entries, selected, state)
  self.entries, self.selected = entries, selected
  self:drawRoster()
  local visible = state ~= nil
+ Theme.enable(self.recoverSelected, visible)
+ self.recoverAll.Text = "Recover all (" .. #entries .. ")"
  self.empty.Visible, self.heading.Visible, self.advancedToggle.Visible = not visible, visible, visible
  self.advanced.Visible = visible and self.expanded
  for _, fields in pairs(self.fields) do fields.row.Visible = visible end
  self.empty.Text = selected and "This character has invalid stats. Use Studio Undo to recover its last valid values."
-  or "Select a character model in the map, then click Register selected character."
+  or "Select a model in the map, then click Register selected model. Already registered? Choose it in the roster above."
  if not state then return end
  self.title.Text = state.name
  for key, fields in pairs(self.fields) do

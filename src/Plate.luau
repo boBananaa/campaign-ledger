@@ -7,7 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 local Plate = {}
 Plate.name = "CampaignLedgerPlate"
 Plate.tag = "CampaignLedgerGeneratedPlate"
-Plate.styleVersion = 9
+Plate.styleVersion = 11
 local C = Theme.colors
 
 -- Convert the design's reference pixels to relative layout once. Roblox handles
@@ -194,23 +194,25 @@ function Plate.render(character, state)
 	local body = Theme.create("Frame", { Name = "Plate", BackgroundColor3 = C.surface,
 		BackgroundTransparency = 0, BorderSizePixel = 0, Size = UDim2.new(1, -2, 1, -6),
 		Position = UDim2.fromOffset(1, 1) }, canvas)
-	Theme.stroke(body, C.line)
-	local nameBand = Theme.create("Frame", { Name = "NameBand", BackgroundColor3 = C.text, BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 32) }, body)
-	Theme.corners(nameBand, C.accent, 7)
-	Theme.label(nameBand, state.name, 20, { Name = "CharacterName", Font = Theme.display,
-		Position = UDim2.fromOffset(8, 2), Size = UDim2.new(1, -16, 0, 27),
-		TextColor3 = C.field, TextXAlignment = Enum.TextXAlignment.Center })
+	Theme.stroke(body, C.edge)
+	Theme.corners(body, C.accent, 8)
+	local nameBand = Theme.create("Frame", { Name = "NameBand", BackgroundColor3 = C.shell, BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 26) }, body)
+	Theme.rule(nameBand, { BackgroundColor3 = C.line, Position = UDim2.new(0, 5, 1, 0), Size = UDim2.new(1, -10, 0, 1) })
+	Theme.label(nameBand, state.name, 19, { Name = "CharacterName", Font = Theme.display,
+		Position = UDim2.fromOffset(8, 2), Size = UDim2.new(1, -16, 0, 23),
+		TextColor3 = C.text, TextXAlignment = Enum.TextXAlignment.Center })
 	for index, key in ipairs({ "hp", "mana" }) do
 		local resource = state[key]
-		local y = 36 + (index - 1) * 25
+		local y = 32 + (index - 1) * 26
 		Theme.label(body, key == "hp" and "Health" or "Mana", 13, {
 			Position = UDim2.fromOffset(12, y), Size = UDim2.fromOffset(47, 18), TextColor3 = C[key] })
 		Theme.label(body, resource.current .. " / " .. resource.maximum, 14, {
 			Name = key .. "Value", Font = Theme.bold, Position = UDim2.new(1, -82, 0, y),
 			Size = UDim2.fromOffset(70, 18), TextXAlignment = Enum.TextXAlignment.Right })
 		local track = Theme.create("Frame", { Name = key .. "Track", BackgroundColor3 = C.track,
-			BorderSizePixel = 0, Position = UDim2.fromOffset(61, y + 5), Size = UDim2.fromOffset(79, 7) }, body)
+			BorderSizePixel = 0, Position = UDim2.fromOffset(61, y + 5), Size = UDim2.fromOffset(79, 6) }, body)
+		Theme.stroke(track, C.line)
 		local fraction = resource.maximum == 0 and 0 or resource.current / resource.maximum
 		local fill = Theme.create("Frame", { Name = "Fill", BackgroundColor3 = C[key], BorderSizePixel = 0,
 			Size = UDim2.fromScale(fraction, 1) }, track)

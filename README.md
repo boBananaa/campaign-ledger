@@ -1,36 +1,39 @@
-# Campaign tools
+# Campaign Tools
 
-Health, mana and action-point controls for D&D sessions in **Roblox Studio / Team Create**.
-Character stats appear above models when you hover over them.
+One Roblox Studio plugin for D&D sessions: hovered character stats, party/enemy turn
+text, a DM ledger and a D20 roller.
 
-**[Download plugins](https://github.com/boBananaa/campaign-ledger/releases/latest)** ·
-[Installation help](docs/INSTALLATION.md) · [User guide](docs/USER_GUIDE.md)
+**[Combined plugin](dist/CampaignTools.rbxmx)** · [Install or publish](docs/INSTALLATION.md) · [User guide](docs/USER_GUIDE.md) · [Version backups](BACKUPS.md#version-checkpoints)
 
-## What to install
+## Everyone installs the same file
 
-| Plugin | Who needs it | What it does |
-| --- | --- | --- |
-| **Campaign Ledger** | DM | Edit character resources, apply recovery, and set party/enemy turns. |
-| **D20 Roller** | DM, optional | Roll with modifiers, advantage or disadvantage. |
-| **Turn Watch** | Each player | Show whose side is acting and display hovered character stats. |
+| Mode | Features |
+| --- | --- |
+| **Player — default** | Turn Watch and hover stats activate in an enabled D&D world. No Ledger or D20 menu. |
+| **DM controls — opt-in** | Open Campaign Tools and enable DM controls to use Ledger, D20 and world setup. Menus start closed. |
 
 ## Get started
 
-1. Download the `.rbxmx` files you need from the link above.
-2. In Studio, open **Plugins → Plugins Folder**, copy the files there, and reopen Studio.
-3. As DM, open **DM Ledger**, select a character model and click **Register selected character**.
-4. Enter an amount and click **Subtract** or **Add** during combat. Use **Party turn**,
-   **Enemy turn** and **End combat** to update the players' turn display.
+1. Install **CampaignTools.rbxmx** through **Plugins → Plugins Folder**, then reopen Studio.
+2. Click the single **Campaign Tools** toolbar button. As DM, turn **DM controls: On**, then **Enable D&D in this world** in the session map.
+3. Click **Open Ledger**, select an existing character and click **Register selected model**.
+4. Players install the same plugin once. Turn text and hover stats need no extra activation.
 
-Each person installs their own plugins. These tools run in **Studio edit mode**.
-Stats stay with the saved character/place; installing a plugin does not transfer them.
+These tools run in **Studio edit mode / Team Create**. The shared world setting
+activates installed plugins; joining a world cannot install one automatically.
+Stats stay with saved character models. After publishing an exported map under a
+new place ID, the DM clicks **Enable D&D in this world** once in that destination.
 
-## Need something specific?
+The launcher holds the display switches and DM controls in one place. Closing it
+leaves player turn text and hover stats running. All menus start closed.
 
-- **Setup or updates:** [Install and reload](docs/INSTALLATION.md)
-- **Hide or disable it:** [Turn off the plugins](docs/INSTALLATION.md#temporarily-disable-these-local-plugins)
-- **Maximums, recovery, names or hover settings:** [User guide](docs/USER_GUIDE.md)
-- **Restore an older version:** [Backups and rollback](BACKUPS.md)
-- **Known issues:** [Validation record](QA.md#known-issue-at-hover-plates-v1-release), including the unresolved chest-selection report
+When moving to the combined plugin, remove the three old standalone plugin files
+from the Plugins folder to avoid running both versions. Keep them elsewhere as backups.
+This updated build is prepared locally; update the existing Roblox plugin asset to distribute it.
 
-For contributors: [Build and architecture](docs/DEVELOPMENT.md) · [Design](DESIGN.md) · [Tests and live checks](QA.md)
+## Help
+
+- [Installation, migration, publishing and reload](docs/INSTALLATION.md)
+- [Combat, recovery, names and display preferences](docs/USER_GUIDE.md)
+- [Backups](BACKUPS.md) · [Known issues and validation](QA.md)
+- Contributors: [Build guide](docs/DEVELOPMENT.md) · [Design](DESIGN.md)

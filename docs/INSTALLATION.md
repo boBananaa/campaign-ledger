@@ -1,61 +1,75 @@
-# Install, reload or turn off
+# Install or publish Campaign Tools
 
-[Back to the overview](../README.md) · [User guide](USER_GUIDE.md)
+[Overview](../README.md) · [User guide](USER_GUIDE.md)
 
-## Install
+## One file for everyone
 
-1. [Download the latest release](https://github.com/boBananaa/campaign-ledger/releases/latest).
-2. In Studio, open **Plugins → Plugins Folder**. On Mac, Plugins is also in the
-   menu bar at the top of the screen.
-3. Copy the `.rbxmx` files you need into that folder:
+Use **[CampaignTools.rbxmx](../dist/CampaignTools.rbxmx)**. Ledger, D20 and Turn Watch
+are in one self-contained Script, so they publish as one Roblox plugin asset.
+The optional [CampaignTools.zip](../dist/CampaignTools.zip) includes that same file,
+source, documentation and tests; it is not the file to upload as a plugin.
 
-   | Role | Files |
-   | --- | --- |
-   | DM | `CampaignLedger.rbxmx`; optionally `CampaignD20.rbxmx` |
-   | Player | `CampaignTurnWatch.rbxmx` |
+1. Open Studio → **Plugins → Plugins Folder**.
+2. Copy `CampaignTools.rbxmx` into that folder.
+3. Reopen Studio once after saving your work.
 
-4. Reopen Studio once if the plugins do not appear.
+Player mode is the default. Turn Watch and hovered character stats activate in an
+enabled D&D world; the turn text stays hidden outside combat. Players do not need
+to enable the viewer themselves. The single **Campaign Tools** toolbar button opens
+a launcher containing all settings. A DM turns **DM controls: On**, then clicks
+**Enable D&D in this world** once in the saved session map. **Open Ledger** and
+**Open D20** launch the DM windows. The launcher and both windows start closed;
+closing the launcher leaves the player viewer running.
+The local DM choice is remembered. It is a convenience setting, not an access restriction.
 
-Each collaborator installs their own copy. These are Studio tools for edit mode,
-not interfaces for players in a running Roblox game. Installed plugins are available
-across places on that computer; character stats belong to the saved place/model.
+Each person installs the plugin once. Team Create shares the world flag and authored
+stats, not plugin installations. Every party member should use the same current build.
 
-The release ZIP includes source and documentation as well as all three plugins.
-For the latest committed build, download files from [dist/](../dist); the latest
-published release may contain an older build.
+## Migrate from the three standalone plugins
 
-## Reload an updated copy
+Move these files out of the local Plugins folder, keeping them as backups:
 
-Replace the installed `.rbxmx` file with the new one, then reopen Studio.
+- `CampaignLedger.rbxmx`
+- `CampaignD20.rbxmx`
+- `CampaignTurnWatch.rbxmx`
 
-For a reload without reopening: enable **Plugin Debugging Enabled** under Studio
-Settings → Studio, find the plugin in **PluginDebugService**, right-click it and
-choose **Reload Plugin**. Use **Save and Reload Plugin** only when you intend to
-save the in-memory plugin source; it can overwrite a newer copy on disk.
+Install `CampaignTools.rbxmx`, then reopen Studio once when ready. Do not run the
+combined and standalone copies together. Existing character IDs, resources, maxima,
+plates and the enabled-world flag are compatible; no re-registration is needed.
+The combined plugin starts in player mode on its first installation, so the DM
+enables **DM controls** locally. Hover preferences can be adjusted independently.
 
-## Hide a panel or turn notice
+## Publish one Roblox plugin
 
-- Click **DM Ledger** or **D20 Roller** again, or close its panel with **×**.
-- Click **Turn Watch** to hide the turn notice on your screen.
-- **End combat** hides the notice for everyone in the same place.
+To publish without replacing the local plugins yet:
 
-Closing a panel does not unload the plugin or disable its overhead stats viewer.
+1. Import `CampaignTools.rbxmx` into **ServerStorage** using **Insert → Import Roblox Model**.
+2. Select the imported **CampaignTools Script**.
+3. Choose **Plugins → Publish as Plugin**, then provide its name and description.
+4. Configure its Creator Store distribution if other people should install it.
 
-## Temporarily disable these local plugins
+Alternatively, after installing the combined plugin locally, select the Script
+inside **PluginDebugService → user_CampaignTools.rbxmx → CampaignTools** and publish it.
+Use the combined Script, not an older copy in the Script Sync folder. The Script
+returns immediately outside plugin context; importing it does not install or start it.
 
-1. Open **Plugins → Plugins Folder**.
-2. Move the relevant `CampaignLedger.rbxmx`, `CampaignD20.rbxmx` or
-   `CampaignTurnWatch.rbxmx` file to a folder outside Plugins. Keep the file so
-   you can restore it later.
-3. Reopen Studio.
+Update the same Roblox asset for future releases. Creator Store publishing and
+account/distribution requirements are separate from this local build. Nothing has
+been uploaded automatically. See [Roblox's publishing instructions](https://create.roblox.com/docs/studio/plugins#upload-plugins).
 
-To restore it, move the file back and reopen Studio. Disabling a plugin does not
-remove saved character stats. Ledger and Turn Watch both supply the hover viewer;
-move both out if you want to stop that viewer completely.
+When installing the Roblox-published version, move the manually installed
+`CampaignTools.rbxmx` out of Plugins so only one copy runs.
 
-## Install from source
+## Reload, hide or disable
 
-For a source-based install, select the corresponding synced Script under
-**ServerScriptService → DnD Test Scripts**, then **Plugins → Save as Local Plugin**.
+After replacing a local file, reopen Studio, or right-click the installed plugin
+under **PluginDebugService** and choose **Reload Plugin**. Do not use **Save and
+Reload Plugin** with stale in-memory source; it can overwrite the new disk copy.
 
-See the [developer guide](DEVELOPMENT.md) for Script Sync direction and build steps.
+- **DM controls off** removes DM content and closes both DM menus; player features stay active.
+- In the launcher, **Turn text** hides/shows the local turn notice; **End combat** in Ledger hides it for everyone.
+- **Hover-only** in the launcher changes the local stats display preference.
+- **Disable D&D in this world** deactivates campaign sessions for installed collaborators, preserving stats. The launcher stays available for re-enabling.
+- To disable the entire combined plugin locally, move its file outside Plugins and reopen Studio.
+
+World isolation and export behavior are explained in the [user guide](USER_GUIDE.md#world-isolation-and-exporting).

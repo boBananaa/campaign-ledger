@@ -59,6 +59,20 @@ restarted:setHoverOnly(true); step()
 check(shown() == 0, "re-enabled hover starts hidden")
 restarted:destroy()
 check(a.Enabled == false, "unload leaves shared templates disabled")
+local changeA, changeB = 0, 0
+local leaseA = Hover.start(dm, function() changeA += 1 end)
+local leaseB = Hover.start(dm, function() changeB += 1 end)
+local surfaces = 0
+for _, child in ipairs(root():GetChildren()) do if child.Name == "HoverSurface" then surfaces += 1 end end
+check(surfaces == 1, "combined plugin consumers share one pointer surface")
+leaseA:setHoverOnly(false); step()
+check(not leaseB:getHoverOnly() and changeA > 1 and changeB > 1, "shared preference notifies both features")
+leaseA:destroy(); step()
+check(root() ~= nil and not leaseB:getHoverOnly(), "disabling DM lease keeps player viewer alive")
+leaseA:destroy(); step()
+check(root() ~= nil, "lease release is idempotent")
+leaseB:destroy(); step()
+check(root() == nil, "last feature lease removes shared renderer")
 print("PASS: " .. count .. " hover controller, local UI and lifecycle checks")
 '''
 source = base + '\n' + fixture + '\nlocal Hover = (function()\n' + module + '\nend)()\n' + checks
