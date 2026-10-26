@@ -67,3 +67,10 @@ for name,label in [('launcher-player','Player defaults'),('launcher-dm','DM cont
  data=json.loads((base/f'{name}.json').read_text());w,h=data['width'],data['height'];root=data['root'];_,_,boxes=dimensions(root,w,h,(w,h))
  launcher_body+=f'<section class="pane"><h2>{label}</h2><div class="window" style="width:{w}px;height:{h}px">'+render(root,0,0,w,h,boxes)+'</div></section>'
 (base/'launcher.html').write_text(head.replace('<h1>Campaign Ledger</h1>','<h1>Campaign Tools launcher</h1>')+launcher_body+'</div></html>')
+
+for page,names in [('roster',['roster-compact','roster-tall']),('pose',['pose-empty','pose-pending'])]:
+ body=''
+ for name in names:
+  data=json.loads((base/f'{name}.json').read_text());w,h=data['width'],data['height'];root=data['root'];_,_,boxes=dimensions(root,w,h,(w,h))
+  body+=f'<section class="pane"><h2>{name}</h2><div class="window" style="width:{w}px;height:{h}px">'+render(root,0,0,w,h,boxes)+'</div></section>'
+ (base/f'{page}.html').write_text(head+body+'</div></html>')

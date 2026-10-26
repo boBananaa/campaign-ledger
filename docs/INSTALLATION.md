@@ -18,7 +18,9 @@ enabled D&D world; the turn text stays hidden outside combat. Players do not nee
 to enable the viewer themselves. The single **Campaign Tools** toolbar button opens
 a launcher containing all settings. A DM turns **DM controls: On**, then clicks
 **Enable D&D in this world** once in the saved session map. **Open Ledger** and
-**Open D20** launch the DM windows. The launcher and both windows start closed;
+**Open D20** launch the DM windows. **Open Characters** opens the independent
+resizable character list. **Pose Change** is available to players as well as DMs.
+The launcher and all windows start closed;
 closing the launcher leaves the player viewer running.
 The local DM choice is remembered. It is a convenience setting, not an access restriction.
 
@@ -66,7 +68,7 @@ After replacing a local file, reopen Studio, or right-click the installed plugin
 under **PluginDebugService** and choose **Reload Plugin**. Do not use **Save and
 Reload Plugin** with stale in-memory source; it can overwrite the new disk copy.
 
-- **DM controls off** removes DM content and closes both DM menus; player features stay active.
+- **DM controls off** removes DM content and closes Characters, Ledger and D20; player displays and Pose Change stay available.
 - In the launcher, **Turn text** hides/shows the local turn notice; **End combat** in Ledger hides it for everyone.
 - **Hover-only** in the launcher changes the local stats display preference.
 - **Stat plates: Off** hides all plugin overhead displays locally, even on hover. It preserves character data and the hover-only preference.

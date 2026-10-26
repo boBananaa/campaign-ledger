@@ -89,7 +89,7 @@ local function widget(w, h)
 end
 local calls, actions = {}, {}
 for _, name in ipairs({ "register", "choose", "selectModel", "adjustAmount", "adjust", "newTurn", "setTurn", "recover", "setMaximum",
- "restore", "rename", "toggleAutoName", "togglePlate", "shiftPlate", "rebuild", "remove", "toggleHoverOnly", "saveDivider" }) do
+ "restore", "rename", "toggleAutoName", "togglePlate", "shiftPlate", "rebuild", "remove", "toggleHoverOnly", "openCharacters", "poseChange" }) do
  actions[name] = function(...) table.insert(calls, { name, ... }) end
 end
 function actions.loadRecovery() return { mana = 2, ap = 1 } end

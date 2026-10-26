@@ -371,7 +371,7 @@ function Names.apply(character, state)
 	if state.autoName == false then return state end
 	-- Return a new view; reading the roster must never overwrite combat state.
 	local result = table.clone(state)
-	result.name = Names.resolve(character)
+	result.name = Names.clean(character:GetAttribute("CampaignLedgerPoseName")) or Names.resolve(character)
 	return result
 end
 
@@ -647,7 +647,7 @@ return Theme
 end)()
 
 local Layout = (function()
--- Only roster/editor scroll. Global combat controls never leave the widget.
+-- The roster owns its own window; combat controls keep a dedicated editor viewport.
 local Layout = {}
 Layout.editorPadding = 4
 Layout.headingHeight = 48
@@ -655,22 +655,11 @@ Layout.selectButtonTop = 26
 Layout.selectButtonHeight = 20
 Layout.resourceHeight = 64
 Layout.recoveryHeight = 104
-Layout.minimumSplit = 256
 Layout.editorBottom = 64
-Layout.editorGap = 16
-function Layout.split(height, requested, recoveryOpen)
- local minimum = Layout.minimumSplit + (recoveryOpen and Layout.recoveryHeight or 0)
- -- At normal height keep all three combat rows and the details disclosure in view.
- local maximum = math.max(minimum, height - 384)
- return math.clamp(requested, minimum, maximum)
-end
-function Layout.geometry(height, requested, recoveryOpen)
- local split = Layout.split(height, requested, recoveryOpen)
- return { split = split, search = 140 + (recoveryOpen and Layout.recoveryHeight or 0),
-  roster = 174 + (recoveryOpen and Layout.recoveryHeight or 0),
-  rosterHeight = split - 212 - (recoveryOpen and Layout.recoveryHeight or 0),
-  register = split - 32, editor = split + Layout.editorGap,
-  editorHeight = math.max(1, height - split - Layout.editorGap - Layout.editorBottom) }
+function Layout.combatGeometry(height, recoveryOpen)
+ local extra = recoveryOpen and Layout.recoveryHeight or 0
+ return { navigation = 140 + extra, editor = 178 + extra,
+  editorHeight = math.max(1, height - 178 - extra - Layout.editorBottom) }
 end
 return Layout
 
@@ -1269,6 +1258,548 @@ return Plate
 
 end)()
 
+local PoseStore = (function()
+-- Saved edit-mode transfers. Records live outside Workspace/model deletion.
+local State = State
+local Names = Names
+local Registry = Registry
+local Plate = Plate
+local WorldScope = WorldScope
+local PoseStore = {}
+PoseStore.__index = PoseStore
+PoseStore.folderName = "CampaignToolsPoseChanges"
+PoseStore.stateAttribute = "CampaignLedgerState"
+PoseStore.nameAttribute = "CampaignLedgerPoseName"
+local shared = game:GetService("ReplicatedStorage")
+local world = game:GetService("Workspace")
+local collection = game:GetService("CollectionService")
+local http = game:GetService("HttpService")
+
+function PoseStore.folder()
+ local folder = shared:FindFirstChild(PoseStore.folderName)
+ if folder and folder:IsA("Folder") and folder:GetAttribute("CampaignToolsOwned") == true then return folder end
+ return nil
+end
+function PoseStore.isRecord(record)
+ return record ~= nil and record.Parent == PoseStore.folder() and record:IsA("Folder")
+  and record:GetAttribute("CampaignToolsPoseRecord") == true
+  and record:GetAttribute("PlaceId") == game.PlaceId
+  and record:GetAttribute("Status") == "pending"
+end
+function PoseStore.records()
+ local records, folder = {}, PoseStore.folder()
+ if folder then for _, record in ipairs(folder:GetChildren()) do if PoseStore.isRecord(record) then table.insert(records, record) end end end
+ table.sort(records, function(a, b) return a.Name &lt; b.Name end)
+ return records
+end
+function PoseStore.source(record)
+ local ref = record:FindFirstChild("SourceModel")
+ return ref and ref:IsA("ObjectValue") and ref.Value or nil
+end
+function PoseStore.forId(id)
+ if not Registry.validId(id) then return nil end
+ for _, record in ipairs(PoseStore.records()) do if record:GetAttribute(Registry.idAttribute) == id then return record end end
+ return nil
+end
+function PoseStore.read(record)
+ local ok, state = pcall(function() return http:JSONDecode(record:GetAttribute(PoseStore.stateAttribute)) end)
+ if not ok then return nil, "The saved pose-change data could not be read. It has been kept for recovery." end
+ local valid, message = State.validate(state)
+ if not valid then return nil, message end
+ return Names.apply(record, state)
+end
+function PoseStore.new(plugin)
+ local ok, userId = pcall(function() return game:GetService("StudioService"):GetUserId() end)
+ return setmetatable({ plugin = plugin, userId = ok and userId or 0, busy = false }, PoseStore)
+end
+function PoseStore:mine()
+ for _, record in ipairs(PoseStore.records()) do if record:GetAttribute("OwnerUserId") == self.userId then return record end end
+ return nil
+end
+function PoseStore:edit(label, operation, rollback)
+ if not WorldScope.isEnabled() then return false, "Enable D&amp;D in this world first." end
+ if game:GetService("RunService"):IsRunning() then return false, "Stop Play mode before changing a pose." end
+ if self.userId &lt;= 0 then return false, "Sign into Studio before changing a pose." end
+ if self.busy then return false, "Finish the current pose edit first." end
+ local history = game:GetService("ChangeHistoryService")
+ local started, recording = pcall(function() return history:TryBeginRecording("CampaignTools.Pose", label) end)
+ if not started or not recording then return false, "Finish the current Studio edit, then try again." end
+ self.busy = true
+ local ok, message = pcall(operation)
+ if not ok and rollback then
+  local restored, restoreError = pcall(rollback)
+  if not restored then warn("Campaign Tools pose recovery: " .. tostring(restoreError)) end
+ end
+ local finished, finishError = pcall(function()
+  history:FinishRecording(recording, ok and Enum.FinishRecordingOperation.Commit or Enum.FinishRecordingOperation.Cancel)
+ end)
+ self.busy = false
+ if not ok or not finished then return false, tostring(message or finishError) end
+ return true
+end
+function PoseStore:begin(candidate)
+ if self:mine() then return self:mine(), "Finish or cancel your pending pose change first." end
+ local source = candidate and Registry.registeredAncestor(candidate, world)
+ if not source or not source:IsDescendantOf(world) then return nil, "Select a registered character in the map first." end
+ local raw = source:GetAttribute(PoseStore.stateAttribute)
+ local ok, state = pcall(function() return http:JSONDecode(raw) end)
+ if not ok then return nil, "The original character has unreadable stats; nothing was changed." end
+ local valid, message = State.validate(state)
+ if not valid then return nil, message end
+ local id = source:GetAttribute(Registry.idAttribute)
+ if not Registry.validId(id) then return nil, "This character needs a valid ledger ID before changing its pose." end
+ if PoseStore.forId(id) then return nil, "Another editor is already changing this character's pose." end
+ if not Plate.anchor(source) then return nil, "The original character has no usable geometry." end
+ local record, detached = nil, false
+ local edited, errorMessage = self:edit("Prepare character pose change", function()
+  assert(source:IsDescendantOf(world) and source:HasTag(Registry.tag) and source:GetAttribute(Registry.idAttribute) == id
+   and source:GetAttribute(PoseStore.stateAttribute) == raw and not PoseStore.forId(id), "Character changed; try again.")
+  local folder = PoseStore.folder()
+  if not folder then
+   assert(not shared:FindFirstChild(PoseStore.folderName), "The pose storage name is occupied by unrelated content.")
+   folder = Instance.new("Folder"); folder.Name = PoseStore.folderName
+   folder:SetAttribute("CampaignToolsOwned", true); folder.Parent = shared
+  end
+  record = Instance.new("Folder"); record.Name = http:GenerateGUID(false)
+  record:SetAttribute("CampaignToolsPoseRecord", true); record:SetAttribute("PlaceId", game.PlaceId)
+  record:SetAttribute("OwnerUserId", self.userId); record:SetAttribute("Status", "pending")
+  record:SetAttribute(Registry.idAttribute, id); record:SetAttribute(PoseStore.stateAttribute, raw)
+  record:SetAttribute(PoseStore.nameAttribute, Names.apply(source, state).name)
+  record:SetAttribute("OriginalState", raw)
+  local ref = Instance.new("ObjectValue"); ref.Name = "SourceModel"; ref.Value = source; ref.Parent = record
+  record.Parent = folder -- Fully save before detaching the model's registration.
+  collection:RemoveTag(source, Registry.tag); detached = true
+  Plate.clear(source)
+ end, function()
+  if detached then collection:AddTag(source, Registry.tag); Plate.render(source, state) end
+  if record then record:Destroy() end
+ end)
+ if not edited then return nil, errorMessage end
+ return record, "Registration saved. Delete the old pose and paste its replacement."
+end
+function PoseStore:candidate(record, selected, automatic, replaceExisting)
+ if not PoseStore.isRecord(record) or record:GetAttribute("OwnerUserId") ~= self.userId then return nil, "This pose change belongs to another editor or is no longer pending." end
+ if not Registry.validId(record:GetAttribute(Registry.idAttribute)) then return nil, "The saved character ID is invalid. The recovery record has been kept." end
+ local source = PoseStore.source(record)
+ if source and source:IsDescendantOf(world) and (source:HasTag(Registry.tag)
+  or source:GetAttribute(Registry.idAttribute) ~= record:GetAttribute(Registry.idAttribute)
+  or source:GetAttribute(PoseStore.stateAttribute) ~= record:GetAttribute("OriginalState")) then
+  return nil, "The original model's registration changed while waiting. Nothing was overwritten."
+ end
+ local count = 0
+ for _, other in ipairs(PoseStore.records()) do if other:GetAttribute(Registry.idAttribute) == record:GetAttribute(Registry.idAttribute) then count += 1 end end
+ if count ~= 1 then return nil, "Conflicting pose changes exist. Saved data is preserved; resolve the other pending change first." end
+ if not selected or not selected:IsDescendantOf(world) or not (selected:IsA("Model") or selected:IsA("BasePart")) then
+  return nil, "Select exactly one replacement model in Workspace."
+ end
+ local target, message = Registry.character(selected)
+ if not target then return nil, message end
+ if target == PoseStore.source(record) then return nil, "Choose the new pose, not the original model." end
+ if Registry.registeredAncestor(target.Parent, world) then return nil, "The replacement is inside an already registered character." end
+ for _, child in ipairs(target:GetDescendants()) do if child:HasTag(Registry.tag) then return nil, "The replacement contains registered characters." end end
+ local raw, id = target:GetAttribute(PoseStore.stateAttribute), target:GetAttribute(Registry.idAttribute)
+ if raw ~= nil or target:HasTag(Registry.tag) then
+  -- A freshly pasted copy of this exact character may already carry its data.
+  if id ~= record:GetAttribute(Registry.idAttribute) then
+   if automatic or not replaceExisting then return nil, "The selected model already has another character's registration." end
+   local ok, existing = pcall(function() return http:JSONDecode(raw) end)
+   if not ok or not State.validate(existing) then return nil, "The replacement has unreadable saved stats. Choose a clean replacement; its old data was left untouched." end
+  end
+  if automatic and raw ~= record:GetAttribute("OriginalState") then return nil, "This copy has different saved stats. Use selected model to confirm the replacement." end
+ end
+ if not Plate.anchor(target) then return nil, "The replacement needs a Head, PrimaryPart or another BasePart." end
+ return target
+end
+function PoseStore:apply(record, selected, automatic, replaceExisting)
+ local target, message = self:candidate(record, selected, automatic, replaceExisting)
+ if not target then return false, message end
+ local state, stateError = PoseStore.read(record)
+ if not state then return false, stateError end
+ local raw, id = record:GetAttribute(PoseStore.stateAttribute), record:GetAttribute(Registry.idAttribute)
+ local oldRaw, oldId, oldName, tagged = target:GetAttribute(PoseStore.stateAttribute), target:GetAttribute(Registry.idAttribute), target:GetAttribute(PoseStore.nameAttribute), target:HasTag(Registry.tag)
+ local source = PoseStore.source(record)
+ local sourceRaw, sourceId, sourceName = source and source:GetAttribute(PoseStore.stateAttribute), source and source:GetAttribute(Registry.idAttribute), source and source:GetAttribute(PoseStore.nameAttribute)
+ local archive, targetTouched, sourceTouched = nil, false, false
+ local edited, errorMessage = self:edit("Transfer character to replacement pose", function()
+  assert(self:candidate(record, target, automatic, replaceExisting) == target and record:GetAttribute(PoseStore.stateAttribute) == raw, "Pose change changed; try again.")
+  assert(target:GetAttribute(PoseStore.stateAttribute) == oldRaw and target:GetAttribute(Registry.idAttribute) == oldId
+   and target:HasTag(Registry.tag) == tagged, "Replacement registration changed; review it again.")
+  if oldRaw and oldId ~= id then
+   archive = Instance.new("Folder"); archive.Name = http:GenerateGUID(false)
+   archive:SetAttribute("CampaignToolsPoseRecord", true); archive:SetAttribute("PlaceId", game.PlaceId)
+   archive:SetAttribute("Status", "replaced"); archive:SetAttribute("OwnerUserId", self.userId)
+   archive:SetAttribute(PoseStore.stateAttribute, oldRaw); archive:SetAttribute(Registry.idAttribute, oldId)
+   archive:SetAttribute(PoseStore.nameAttribute, oldName); archive:SetAttribute("ReplacedById", id)
+   archive.Parent = PoseStore.folder()
+  end
+  targetTouched = true
+  -- Pasted prefabs can carry stale owner references. Only remove generated
+  -- plates physically inside this replacement; never follow them to another rig.
+  for _, gui in ipairs(target:GetDescendants()) do
+   if gui:IsA("BillboardGui") and gui.Name == Plate.name and gui:GetAttribute("CampaignLedgerOwned") == true then gui:Destroy() end
+  end
+  target:SetAttribute(PoseStore.stateAttribute, raw); target:SetAttribute(Registry.idAttribute, id)
+  target:SetAttribute(PoseStore.nameAttribute, record:GetAttribute(PoseStore.nameAttribute))
+  collection:AddTag(target, Registry.tag)
+  Plate.render(target, state)
+  if source and source:IsDescendantOf(world) then
+   sourceTouched = true
+   source:SetAttribute(PoseStore.stateAttribute, nil); source:SetAttribute(Registry.idAttribute, nil); source:SetAttribute(PoseStore.nameAttribute, nil)
+  end
+  record:Destroy() -- Consume only after the replacement and its plate exist.
+ end, function()
+  if targetTouched then
+   Plate.clear(target); target:SetAttribute(PoseStore.stateAttribute, oldRaw)
+   target:SetAttribute(Registry.idAttribute, oldId); target:SetAttribute(PoseStore.nameAttribute, oldName)
+   if tagged then collection:AddTag(target, Registry.tag) else collection:RemoveTag(target, Registry.tag) end
+   if oldRaw and tagged then local ok, oldState = pcall(function() return http:JSONDecode(oldRaw) end); if ok and State.validate(oldState) then Plate.render(target, oldState) end end
+  end
+  if sourceTouched and source and source:IsDescendantOf(world) then
+   source:SetAttribute(PoseStore.stateAttribute, sourceRaw); source:SetAttribute(Registry.idAttribute, sourceId); source:SetAttribute(PoseStore.nameAttribute, sourceName)
+  end
+  if archive then archive:Destroy() end
+ end)
+ return edited, edited and ("Pose changed for " .. state.name .. ". Stats preserved.") or errorMessage, edited and target or nil
+end
+function PoseStore:cancel(record)
+ if not PoseStore.isRecord(record) or record:GetAttribute("OwnerUserId") ~= self.userId then return false, "Choose your own pending pose change." end
+ local source = PoseStore.source(record)
+ if not source or not source:IsDescendantOf(world) then return false, "The original model was deleted. Your stats are safe; select a replacement to finish."
+ end
+ local state, message = PoseStore.read(record)
+ if not state then return false, message end
+ if source:HasTag(Registry.tag) then return false, "The original model has another active registration. The saved record was kept." end
+ if source:GetAttribute(Registry.idAttribute) ~= record:GetAttribute(Registry.idAttribute)
+  or source:GetAttribute(PoseStore.stateAttribute) ~= record:GetAttribute("OriginalState") then
+  return false, "The original model's saved data changed. The recovery record has been kept."
+ end
+ local oldRaw = source:GetAttribute(PoseStore.stateAttribute)
+ local sourceTouched = false
+ local ok, errorMessage = self:edit("Cancel character pose change", function()
+  assert(not source:HasTag(Registry.tag) and source:GetAttribute(PoseStore.stateAttribute) == oldRaw
+   and source:GetAttribute(Registry.idAttribute) == record:GetAttribute(Registry.idAttribute), "Original registration changed; try again.")
+  sourceTouched = true
+  source:SetAttribute(PoseStore.stateAttribute, record:GetAttribute(PoseStore.stateAttribute))
+  collection:AddTag(source, Registry.tag); Plate.render(source, state); record:Destroy()
+ end, function()
+  if sourceTouched then Plate.clear(source); collection:RemoveTag(source, Registry.tag); source:SetAttribute(PoseStore.stateAttribute, oldRaw) end
+ end)
+ return ok, ok and "Pose change cancelled. Original registration restored." or errorMessage
+end
+return PoseStore
+
+end)()
+
+local PosePanel = (function()
+local Theme = Theme
+local PosePanel = {}
+PosePanel.__index = PosePanel
+local C = Theme.colors
+function PosePanel.new(widget, actions)
+ local self = setmetatable({}, PosePanel)
+ self.root = Theme.create("Frame", { Name = "PoseChange", BackgroundColor3 = C.shell, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, widget)
+ Theme.label(self.root, "Pose Change", 28, { Font = Theme.display, TextXAlignment = Enum.TextXAlignment.Center,
+  Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -28, 0, 34) })
+ self.name = Theme.label(self.root, "Select a registered character", 22, { Font = Theme.display,
+  Position = UDim2.fromOffset(14, 54), Size = UDim2.new(1, -28, 0, 30) })
+ self.summary = Theme.label(self.root, "", 14, { TextColor3 = C.light, TextWrapped = true,
+  Position = UDim2.fromOffset(14, 88), Size = UDim2.new(1, -28, 0, 42) })
+ self.help = Theme.label(self.root, "Save the registration before deleting the old pose. Then paste one replacement model.", 16,
+  { TextColor3 = C.light, TextWrapped = true, TextTruncate = Enum.TextTruncate.None,
+   Position = UDim2.fromOffset(14, 138), Size = UDim2.new(1, -28, 0, 72) })
+ self.target = Theme.label(self.root, "", 14, { TextColor3 = C.muted,
+  Position = UDim2.fromOffset(14, 216), Size = UDim2.new(1, -28, 0, 24) })
+ self.primary = Theme.button(self.root, "Save registration &amp; change pose", { Name = "PosePrimary", TextSize = 15,
+  Position = UDim2.fromOffset(14, 248), Size = UDim2.new(1, -28, 0, 34) })
+ self.primary.Activated:Connect(actions.primary)
+ self.cancel = Theme.button(self.root, "Cancel pose change", { Name = "PoseCancel", TextSize = 14,
+  Position = UDim2.fromOffset(14, 290), Size = UDim2.new(1, -28, 0, 30) })
+ self.cancel.Activated:Connect(actions.cancel)
+ self.footer = Theme.label(self.root, "Existing stats and maximums are preserved.", 13, { TextColor3 = C.light,
+  TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Position = UDim2.new(0, 14, 1, -66), Size = UDim2.new(1, -28, 0, 58) })
+ return self
+end
+function PosePanel:refresh(view)
+ self.name.Text = view.name or "Select a registered character"
+ self.summary.Text = view.summary or ""
+ self.primary.Text = view.confirming and "Confirm replacement" or view.pending and "Use selected model" or "Save registration &amp; change pose"
+ self.help.Text = view.pending and "Registration saved. Delete the old pose, then paste one new model. A newly pasted, selected replacement transfers automatically."
+  or "Save the registration before deleting the old pose. Then paste one replacement model."
+ self.target.Text = view.target and ("Selected: " .. view.target) or "Select one model in the map."
+ self.cancel.Visible = view.pending == true
+ Theme.enable(self.primary, view.canApply == true)
+ Theme.enable(self.cancel, view.canCancel == true)
+end
+function PosePanel:notify(message, isError)
+ self.footer.Text = message
+ self.footer.TextColor3 = isError and C.hp or C.light
+end
+function PosePanel:destroy() self.root:Destroy() end
+return PosePanel
+
+end)()
+
+local PoseSession = (function()
+local PoseStore = PoseStore
+local PosePanel = PosePanel
+local WorldScope = WorldScope
+local Registry = Registry
+local State = State
+local Names = Names
+local PoseSession = {}
+function PoseSession.start(plugin, onChanged)
+ local store = PoseStore.new(plugin)
+ local selection, world = game:GetService("Selection"), game:GetService("Workspace")
+ local shared, history = game:GetService("ReplicatedStorage"), game:GetService("ChangeHistoryService")
+ local input = game:GetService("UserInputService")
+ local alive, queued, ticket = true, false, 0
+ local panel, widget, message, errorFlag
+ local links, observed, recent = {}, {}, {}
+ local pasteUntil = 0
+ local confirmation
+ local refresh, schedule
+ local function connect(signal, callback) table.insert(links, signal:Connect(callback)) end
+ local function picked() local items = selection:Get(); return #items == 1 and items[1] or nil end
+ local function notify(text, isError)
+  message, errorFlag = text, isError
+  if panel then panel:notify(text, isError) end
+  if onChanged then onChanged() end
+ end
+ refresh = function()
+  if not alive then return end
+  local pending, target = store:mine(), picked()
+  local present = {}
+  for _, record in ipairs(PoseStore.records()) do
+   present[record] = true
+   if not observed[record] then
+    observed[record] = {
+     record:GetAttributeChangedSignal(PoseStore.stateAttribute):Connect(schedule),
+     record:GetAttributeChangedSignal(PoseStore.nameAttribute):Connect(schedule),
+     record.AncestryChanged:Connect(schedule),
+    }
+   end
+  end
+  for record, connections in pairs(observed) do
+   if not present[record] then for _, link in ipairs(connections) do link:Disconnect() end; observed[record] = nil end
+  end
+  if panel then
+   local state, canApply, canCancel
+   if pending then
+    state = PoseStore.read(pending)
+    canApply = store:candidate(pending, target, false, true) ~= nil
+    local source = PoseStore.source(pending)
+    canCancel = source ~= nil and source:IsDescendantOf(world) and not source:HasTag(Registry.tag)
+   else
+    local source = target and Registry.registeredAncestor(target, world)
+    if source then
+     local ok, saved = pcall(function() return game:GetService("HttpService"):JSONDecode(source:GetAttribute(PoseStore.stateAttribute)) end)
+     if ok and State.validate(saved) then state = Names.apply(source, saved); canApply = true end
+    end
+   end
+   local summary = state and string.format("Health %d / %d   Mana %d / %d   AP %d / %d", state.hp.current, state.hp.maximum,
+    state.mana.current, state.mana.maximum, state.ap.current, state.ap.maximum) or ""
+   panel:refresh({ pending = pending ~= nil, name = state and state.name, summary = summary,
+    target = target and target.Name, canApply = canApply == true, canCancel = canCancel == true,
+    confirming = confirmation ~= nil })
+   if message then panel:notify(message, errorFlag) end
+  end
+  if onChanged then onChanged() end
+ end
+ schedule = function()
+  if queued or not alive then return end
+  queued = true
+  task.defer(function() queued = false; if alive then refresh() end end)
+ end
+ local function finish(automatic, replaceExisting)
+  local pending = store:mine()
+  if not pending then return end
+  local ok, text, target = store:apply(pending, picked(), automatic, replaceExisting)
+  confirmation = nil
+  notify(text, not ok)
+  if ok then ticket += 1; recent = {}; pasteUntil = 0; selection:Set({ target }) end
+  schedule()
+ end
+ local function open()
+  if not widget then
+   widget = WorldScope.widget(plugin, "CampaignTools.Pose.v1", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, true, 360, 410, 320, 400))
+   widget.Title = "Pose Change"
+  end
+  if not panel then
+   panel = PosePanel.new(widget, {
+    primary = function()
+     if store:mine() then
+      local pending, item = store:mine(), picked()
+      local safe = store:candidate(pending, item, false)
+      local target = store:candidate(pending, item, false, true)
+      if not safe and target then
+       local raw, id = target:GetAttribute(PoseStore.stateAttribute), target:GetAttribute(Registry.idAttribute)
+       if confirmation and confirmation.target == target and confirmation.raw == raw and confirmation.id == id and confirmation.record == pending then
+        finish(false, true)
+       else
+        confirmation = { target = target, raw = raw, id = id, record = pending }
+        notify("This model already has a registration. Click Confirm replacement to replace it; its previous stats will be backed up.")
+        schedule()
+       end
+      else finish(false) end
+     else
+      local record, text = store:begin(picked()); notify(text, record == nil); ticket += 1; recent = {}; pasteUntil = 0; schedule()
+     end
+    end,
+    cancel = function() confirmation = nil; local record = store:mine(); if record then local ok, text = store:cancel(record); notify(text, not ok); ticket += 1; recent = {}; pasteUntil = 0; schedule() end end,
+   })
+  end
+  widget.Enabled = true; refresh()
+ end
+ local function selectionChanged()
+  ticket += 1
+  confirmation = nil
+  local request = ticket
+  schedule()
+  task.defer(function()
+   if not alive or request ~= ticket or not store:mine() then return end
+   local item = picked()
+   local target = item and (item:IsA("Model") or item:IsA("BasePart")) and Registry.character(item)
+   if target and recent[target] and os.clock() &lt;= pasteUntil and store:candidate(store:mine(), item, true) then
+    pasteUntil = 0; finish(true)
+   end
+  end)
+ end
+ connect(selection.SelectionChanged, selectionChanged)
+ connect(input.InputBegan, function(key, processed)
+  if processed or not store:mine() or key.KeyCode ~= Enum.KeyCode.V or input:GetFocusedTextBox() then return end
+  if input:IsKeyDown(Enum.KeyCode.LeftControl) or input:IsKeyDown(Enum.KeyCode.RightControl)
+   or input:IsKeyDown(Enum.KeyCode.LeftMeta) or input:IsKeyDown(Enum.KeyCode.RightMeta) then pasteUntil = os.clock() + 5 end
+ end)
+ connect(history.OnRecordingFinished, function(name, displayName, _, operation)
+  if operation == Enum.FinishRecordingOperation.Commit and store:mine()
+   and (string.lower(name or ""):find("paste", 1, true) or string.lower(displayName or ""):find("paste", 1, true)) then
+   pasteUntil = os.clock() + 5; selectionChanged()
+  end
+ end)
+ connect(world.DescendantAdded, function(item)
+  if store:mine() and (item:IsA("Model") or item:IsA("BasePart")) then recent[item] = true end
+ end)
+ connect(world.DescendantRemoving, schedule)
+ connect(shared.DescendantAdded, schedule); connect(shared.DescendantRemoving, schedule)
+ local function undoRedo() ticket += 1; recent = {}; pasteUntil = 0; confirmation = nil; message = nil; schedule() end
+ connect(history.OnUndo, undoRedo); connect(history.OnRedo, undoRedo)
+ refresh()
+ local controller = {}
+ function controller.open() open() end
+ function controller.begin(character)
+  confirmation = nil
+  open()
+  if PoseStore.isRecord(character) and character:GetAttribute("OwnerUserId") ~= store.userId then
+   notify("The editor who started this pose change must finish it. DM combat edits are still available.", true)
+   return
+  end
+  if character and not PoseStore.isRecord(character) then
+   local record, text = store:begin(character); notify(text, record == nil); ticket += 1; recent = {}; pasteUntil = 0; schedule()
+  end
+ end
+ function controller.pending() return store:mine() end
+ local function stop()
+  alive = false; ticket += 1
+  for _, link in ipairs(links) do link:Disconnect() end
+  for _, connections in pairs(observed) do for _, link in ipairs(connections) do link:Disconnect() end end
+  if panel then panel:destroy() end
+  if widget then widget.Enabled = false end
+ end
+ return stop, controller
+end
+return PoseSession
+
+end)()
+
+local RosterPanel = (function()
+local Theme = Theme
+local State = State
+local RosterPanel = {}
+RosterPanel.__index = RosterPanel
+local C = Theme.colors
+local function frame(parent, props)
+ return Theme.create("Frame", props, parent)
+end
+function RosterPanel.new(widget, actions)
+ local self = setmetatable({ actions = actions, rows = {} }, RosterPanel)
+ self.root = Theme.create("Frame", { Name = "CharacterRosterPanel", BackgroundColor3 = C.shell,
+  BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, widget)
+ Theme.label(self.root, "Characters", 28, { Font = Theme.display, TextXAlignment = Enum.TextXAlignment.Center,
+  Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 34) })
+ self.search = Theme.input(self.root, "Search characters…", { Name = "RosterSearch",
+  Position = UDim2.fromOffset(12, 50), Size = UDim2.new(1, -24, 0, 30) })
+ self.search:GetPropertyChangedSignal("Text"):Connect(function() self:drawRoster() end)
+ self.roster = Theme.create("ScrollingFrame", { Name = "CharacterRoster", BackgroundColor3 = C.surface,
+  BorderSizePixel = 0, Position = UDim2.fromOffset(12, 90), Size = UDim2.new(1, -24, 1, -178),
+  CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+  ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
+ Theme.stroke(self.roster, C.edge)
+ Theme.create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, self.roster)
+ self.register = Theme.button(self.root, "+ Register selected model", { Name = "RegisterCharacter", TextSize = 14,
+  Position = UDim2.new(0, 12, 1, -78), Size = UDim2.new(1, -24, 0, 30) })
+ self.register.Activated:Connect(actions.register)
+ self.footer = Theme.label(self.root, "Choose a character to open its combat controls.", 13, { TextColor3 = C.light,
+  TextWrapped = true, TextTruncate = Enum.TextTruncate.None,
+  Position = UDim2.new(0, 12, 1, -40), Size = UDim2.new(1, -24, 0, 34) })
+ self:refresh({}, nil)
+ return self
+end
+function RosterPanel:drawRoster()
+ for _, row in ipairs(self.rows) do row:Destroy() end
+ self.rows = {}
+ local query, shown = string.lower(self.search.Text), 0
+ for _, entry in ipairs(self.entries or {}) do
+  local name = entry.state and entry.state.name or entry.character.Name
+  if query == "" or string.find(string.lower(name), query, 1, true) then
+   shown += 1
+   local active = entry.character == self.selected
+   local button = Theme.create("TextButton", { Name = "Character_" .. (entry.pending and entry.character.Name or entry.id or tostring(shown)), Text = "", BorderSizePixel = 0,
+    BackgroundColor3 = active and C.selection or C.field, BackgroundTransparency = active and 0 or 0.65,
+    AutoButtonColor = false, Size = UDim2.new(1, -5, 0, 42), LayoutOrder = shown, Selectable = true }, self.roster)
+   if active then frame(button, { BackgroundTransparency = 0, BackgroundColor3 = C.accent,
+    Size = UDim2.new(0, 3, 1, 0) }) end
+   Theme.label(button, name, 18, { Font = Theme.display, TextColor3 = C.text,
+    Position = UDim2.fromOffset(10, 1), Size = UDim2.new(1, -42, 0, 24) })
+   if active then Theme.label(button, "›", 24, { TextColor3 = C.text, Font = Theme.bold,
+    Position = UDim2.new(1, -25, 0, 4), Size = UDim2.fromOffset(20, 28), TextXAlignment = Enum.TextXAlignment.Center }) end
+   if entry.pending then
+    Theme.label(button, "Waiting for replacement", 13, { TextColor3 = C.muted,
+     Position = UDim2.fromOffset(10, 23), Size = UDim2.new(1, -20, 0, 18) })
+   elseif entry.state then
+    for index, key in ipairs(State.resources) do
+     local label = key == "ap" and "AP" or State.labels[key]
+     Theme.label(button, label .. " " .. entry.state[key].current, 13, { TextColor3 = active and C.text or C[key],
+      Position = UDim2.new((index - 1) / 3, 10, 0, 23), Size = UDim2.new(1 / 3, -12, 0, 18) })
+    end
+   else
+    Theme.label(button, "Stats need repair", 13, { TextColor3 = C.hp,
+     Position = UDim2.fromOffset(10, 23), Size = UDim2.new(1, -20, 0, 18) })
+   end
+   button.Activated:Connect(function() self.actions.choose(entry.character) end)
+   local function highlight(value) button.BackgroundTransparency = active and 0 or value and 0 or 0.65 end
+   button.MouseEnter:Connect(function() highlight(true) end)
+   button.MouseLeave:Connect(function() highlight(false) end)
+   button.SelectionGained:Connect(function() highlight(true) end)
+   button.SelectionLost:Connect(function() highlight(false) end)
+   table.insert(self.rows, button)
+  end
+ end
+ if shown == 0 then table.insert(self.rows, Theme.label(self.roster,
+  query == "" and "No characters registered yet." or "No matching characters.", 15,
+  { TextColor3 = C.muted, Size = UDim2.new(1, -5, 0, 38) })) end
+end
+function RosterPanel:refresh(entries, selected)
+ self.entries, self.selected = entries, selected
+ self:drawRoster()
+end
+function RosterPanel:notify(message, isError)
+ self.footer.Text = message; self.footer.TextColor3 = isError and C.hp or C.light
+end
+function RosterPanel:destroy() self.root:Destroy() end
+return RosterPanel
+
+end)()
+
 local Panel = (function()
 local Theme = Theme
 local State = State
@@ -1288,7 +1819,7 @@ local function stack(parent, gap)
 end
 
 function Panel.new(widget, actions)
- local self = setmetatable({ actions = actions, fields = {}, rows = {}, turnButtons = {}, connections = {}, expanded = false }, Panel)
+ local self = setmetatable({ actions = actions, fields = {}, turnButtons = {}, connections = {}, expanded = false }, Panel)
  self.viewport = frame(widget, { Name = "LedgerViewport", BackgroundTransparency = 0,
   BackgroundColor3 = C.shell, Size = UDim2.fromScale(1, 1) })
  self.root = frame(self.viewport, { Name = "CampaignLedger", Size = UDim2.fromScale(1, 1) })
@@ -1330,24 +1861,12 @@ function Panel.new(widget, actions)
  end
  Theme.label(self.recovery, "Manual recovery · caps at maximum · 0 skips", 13, { TextColor3 = C.muted,
   Position = UDim2.fromOffset(8, 80), Size = UDim2.new(1, -16, 0, 16) })
- self.search = Theme.input(self.root, "Search characters…", { Position = UDim2.fromOffset(12, 140), Size = UDim2.new(1, -24, 0, 28) })
- self.search:GetPropertyChangedSignal("Text"):Connect(function() self:drawRoster() end)
- self.roster = Theme.create("ScrollingFrame", { Name = "CharacterRoster", BackgroundColor3 = C.surface, BorderSizePixel = 0,
-  Position = UDim2.fromOffset(12, 174), Size = UDim2.new(1, -24, 0, 130), CanvasSize = UDim2.new(),
-  AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
-  ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
- Theme.stroke(self.roster, C.edge)
- stack(self.roster, 2)
- self.register = Theme.button(self.root, "+ Register selected model", { Name = "RegisterCharacter", BackgroundColor3 = C.shell, TextColor3 = C.text, TextSize = 14 })
- self.register.Activated:Connect(actions.register)
- self.divider = Theme.create("TextButton", { Name = "RosterDivider", Text = "", AutoButtonColor = false,
-  BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, -24, 0, 12), Selectable = false }, self.root)
- Theme.rule(self.divider, { Position = UDim2.fromOffset(0, 5) })
- frame(self.divider, { BackgroundTransparency = 0, BackgroundColor3 = C.shell,
-  Position = UDim2.new(0.5, -27, 0, 0), Size = UDim2.fromOffset(54, 12) })
- for _, x in ipairs({ -16, -4, 8 }) do
-  Theme.rule(self.divider, { BackgroundColor3 = C.muted, Position = UDim2.new(0.5, x, 0, 4), Size = UDim2.fromOffset(8, 2) })
- end
+ self.navigation = frame(self.root, { Name = "LedgerNavigation", Position = UDim2.fromOffset(12, 140), Size = UDim2.new(1, -24, 0, 28) })
+ Theme.button(self.navigation, "Characters…", { Name = "OpenCharacters", TextSize = 14,
+  Size = UDim2.new(0.5, -4, 1, 0) }).Activated:Connect(actions.openCharacters)
+ self.pose = Theme.button(self.navigation, "Pose Change", { Name = "ChangePose", TextSize = 14,
+  Position = UDim2.new(0.5, 4, 0, 0), Size = UDim2.new(0.5, -4, 1, 0) })
+ self.pose.Activated:Connect(actions.poseChange)
  self.editor = Theme.create("ScrollingFrame", { Name = "CharacterEditor", BackgroundColor3 = C.surface, BorderSizePixel = 0,
   CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
   ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
@@ -1445,17 +1964,9 @@ function Panel.new(widget, actions)
  self.hoverToggle.Activated:Connect(actions.toggleHoverOnly)
  self.footer = Theme.label(self.root, "Type an amount, then Subtract or Add.", 13, { TextColor3 = C.light,
   TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Position = UDim2.new(0, 12, 1, -30), Size = UDim2.new(1, -24, 0, 28) })
- self.split = actions.loadDivider() or Layout.minimumSplit
  local function layout()
-  local height = math.max(480, self.viewport.AbsoluteSize.Y)
-  local extra = self.recoveryOpen and Layout.recoveryHeight or 0
-  local geometry = Layout.geometry(height, self.split + extra, self.recoveryOpen)
-  self.split = geometry.split - extra
-  self.search.Position = UDim2.fromOffset(12, geometry.search)
-  self.roster.Position = UDim2.fromOffset(12, geometry.roster)
-  self.roster.Size = UDim2.new(1, -24, 0, geometry.rosterHeight)
-  self.register.Position, self.register.Size = UDim2.fromOffset(12, geometry.register), UDim2.new(1, -24, 0, 28)
-  self.divider.Position = UDim2.fromOffset(12, geometry.split)
+  local geometry = Layout.combatGeometry(math.max(480, self.viewport.AbsoluteSize.Y), self.recoveryOpen)
+  self.navigation.Position = UDim2.fromOffset(12, geometry.navigation)
   self.editor.Position = UDim2.fromOffset(12, geometry.editor)
   self.editor.Size = UDim2.new(1, -24, 0, geometry.editorHeight)
  end
@@ -1466,26 +1977,6 @@ function Panel.new(widget, actions)
   self.recoveryToggle.Text = self.recoveryOpen and "− Recovery" or "+ Recovery"
   layout()
  end)
- local dragStartY, dragStartSplit
- local detector = Theme.create("UIDragDetector", { DragStyle = Enum.UIDragDetectorDragStyle.TranslateLine,
-  DragAxis = Vector2.new(0, 1), ResponseStyle = Enum.UIDragDetectorResponseStyle.CustomOffset }, self.divider)
- local function moveDivider(position)
-  if dragStartY then
-   self.split = dragStartSplit + position.Y - dragStartY
-   layout()
-  end
- end
- local function stopDrag()
-  dragStartY, dragStartSplit = nil, nil
-  actions.saveDivider(self.split)
- end
- self.stopDrag = stopDrag
- detector.DragStart:Connect(function(position)
-  dragStartY, dragStartSplit = position.Y, self.split
- end)
- detector.DragContinue:Connect(moveDivider)
- detector.DragEnd:Connect(function(position) moveDivider(position); stopDrag() end)
- table.insert(self.connections, widget.WindowFocusReleased:Connect(stopDrag))
  layout()
  self:refresh({}, nil, nil)
  return self
@@ -1506,65 +1997,25 @@ function Panel:updateTurn(value)
  end
 end
 function Panel:destroy()
- self.stopDrag()
  for _, connection in ipairs(self.connections) do connection:Disconnect() end
  self.viewport:Destroy()
 end
-function Panel:drawRoster()
- for _, row in ipairs(self.rows) do row:Destroy() end
- self.rows = {}
- local query, shown = string.lower(self.search.Text), 0
- for _, entry in ipairs(self.entries or {}) do
-  local name = entry.state and entry.state.name or entry.character.Name
-  if query == "" or string.find(string.lower(name), query, 1, true) then
-   shown += 1
-   local active = entry.character == self.selected
-   local button = Theme.create("TextButton", { Name = "Character_" .. (entry.id or tostring(shown)), Text = "", BorderSizePixel = 0,
-    BackgroundColor3 = active and C.selection or C.field, BackgroundTransparency = active and 0 or 0.65,
-    AutoButtonColor = false, Size = UDim2.new(1, -5, 0, 42), LayoutOrder = shown, Selectable = true }, self.roster)
-   if active then frame(button, { BackgroundTransparency = 0, BackgroundColor3 = C.accent,
-    Size = UDim2.new(0, 3, 1, 0) }) end
-   Theme.label(button, name, 18, { Font = Theme.display, TextColor3 = C.text,
-    Position = UDim2.fromOffset(10, 1), Size = UDim2.new(1, -42, 0, 24) })
-   if active then Theme.label(button, "›", 24, { TextColor3 = C.text, Font = Theme.bold,
-    Position = UDim2.new(1, -25, 0, 4), Size = UDim2.fromOffset(20, 28), TextXAlignment = Enum.TextXAlignment.Center }) end
-   if entry.state then
-    for index, key in ipairs(State.resources) do
-     local label = key == "ap" and "AP" or State.labels[key]
-     Theme.label(button, label .. " " .. entry.state[key].current, 13, { TextColor3 = active and C.text or C[key],
-      Position = UDim2.new((index - 1) / 3, 10, 0, 23), Size = UDim2.new(1 / 3, -12, 0, 18) })
-    end
-   else
-    Theme.label(button, "Stats need repair", 13, { TextColor3 = C.hp,
-     Position = UDim2.fromOffset(10, 23), Size = UDim2.new(1, -20, 0, 18) })
-   end
-   button.Activated:Connect(function() self.actions.choose(entry.character) end)
-   local function highlight(value) button.BackgroundTransparency = active and 0 or value and 0 or 0.65 end
-   button.MouseEnter:Connect(function() highlight(true) end)
-   button.MouseLeave:Connect(function() highlight(false) end)
-   button.SelectionGained:Connect(function() highlight(true) end)
-   button.SelectionLost:Connect(function() highlight(false) end)
-   table.insert(self.rows, button)
-  end
- end
- if shown == 0 then table.insert(self.rows, Theme.label(self.roster,
-  query == "" and "No characters registered yet." or "No matching characters.", 15,
-  { TextColor3 = C.muted, Size = UDim2.new(1, -5, 0, 38) })) end
-end
-function Panel:refresh(entries, selected, state)
+function Panel:refresh(entries, selected, state, pending)
  local changed = self.selected ~= selected
  self.entries, self.selected = entries, selected
- self:drawRoster()
  local visible = state ~= nil
  Theme.enable(self.recoverSelected, visible)
  self.recoverAll.Text = "Recover all (" .. #entries .. ")"
+ Theme.enable(self.pose, visible)
  self.empty.Visible, self.heading.Visible, self.advancedToggle.Visible = not visible, visible, visible
  self.advanced.Visible = visible and self.expanded
  for _, fields in pairs(self.fields) do fields.row.Visible = visible end
  self.empty.Text = selected and "This character has invalid stats. Use Studio Undo to recover its last valid values."
-  or "Select a model in the map, then click Register selected model. Already registered? Choose it in the roster above."
+  or "Select a registered model in the map, or open Characters to choose or register one."
  if not state then return end
  self.title.Text = state.name
+ self.pose.Text = pending and "Resume pose change" or "Pose Change"
+ Theme.enable(self.autoName, not pending)
  for key, fields in pairs(self.fields) do
   fields.current.Text = tostring(state[key].current)
   fields.summaryMaximum.Text = "/ " .. state[key].maximum
@@ -1598,6 +2049,8 @@ local State = State
 local Names = Names
 local Plate = Plate
 local Panel = Panel
+local RosterPanel = RosterPanel
+local PoseStore = PoseStore
 local Turn = Turn
 local Hover = Hover
 local hover
@@ -1606,7 +2059,7 @@ local registry = Registry.new(function() return HttpService:GenerateGUID(false) 
 
 local TAG = "CampaignLedgerCharacter"
 local ATTRIBUTE = "CampaignLedgerState"
-local selected, panel
+local selected, panel, rosterPanel, widget, rosterWidget
 local alive, queued, busy = true, false, false
 local automaticSyncFailed = false
 local connections, observed, styled = {}, {}, {}
@@ -1628,7 +2081,7 @@ local function read(character)
 end
 
 local function isCharacter(character)
-	return character and character:IsDescendantOf(Workspace) and CollectionService:HasTag(character, TAG)
+	return PoseStore.isRecord(character) or character and character:IsDescendantOf(Workspace) and CollectionService:HasTag(character, TAG)
 end
 
 local refresh, transaction
@@ -1645,7 +2098,8 @@ refresh = function()
 	local entries, present, plateUpdates, pruneUpdates = {}, {}, {}, {}
 	local characters = {}
 	for _, character in ipairs(CollectionService:GetTagged(TAG)) do
-		if character:IsDescendantOf(Workspace) and not Registry.registeredAncestor(character.Parent, Workspace) then
+		if character:IsDescendantOf(Workspace) and not Registry.registeredAncestor(character.Parent, Workspace)
+			and not PoseStore.forId(character:GetAttribute(Registry.idAttribute)) then
 			table.insert(characters, character)
 		end
 	end
@@ -1668,6 +2122,7 @@ refresh = function()
 				observed[character] = {
 					character:GetAttributeChangedSignal(ATTRIBUTE):Connect(scheduleRefresh),
 					character:GetAttributeChangedSignal(Registry.idAttribute):Connect(scheduleRefresh),
+					character:GetAttributeChangedSignal(PoseStore.nameAttribute):Connect(scheduleRefresh),
 					character:GetPropertyChangedSignal("Name"):Connect(scheduleRefresh),
 					character.AncestryChanged:Connect(scheduleRefresh),
 					Names.observe(character, scheduleRefresh),
@@ -1680,14 +2135,24 @@ refresh = function()
 			observed[character] = nil
 		end
 	end
+	for _, record in ipairs(PoseStore.records()) do
+		present[record] = true
+		table.insert(entries, { character = record, state = PoseStore.read(record), id = record:GetAttribute(Registry.idAttribute), pending = true })
+		if not observed[record] then observed[record] = {
+			record:GetAttributeChangedSignal(ATTRIBUTE):Connect(scheduleRefresh),
+			record:GetAttributeChangedSignal(PoseStore.nameAttribute):Connect(scheduleRefresh),
+			record.AncestryChanged:Connect(scheduleRefresh),
+		} end
+	end
 	if not present[selected] then selected = nil end
 	table.sort(entries, function(a, b)
 		local aName = a.state and a.state.name or a.character.Name
 		local bName = b.state and b.state.name or b.character.Name
-		if string.lower(aName) == string.lower(bName) then return a.id &lt; b.id end
+		if string.lower(aName) == string.lower(bName) then return (a.pending and a.character.Name or a.id) &lt; (b.pending and b.character.Name or b.id) end
 		return string.lower(aName) &lt; string.lower(bName)
 	end)
-	panel:refresh(entries, selected, selected and read(selected) or nil)
+	panel:refresh(entries, selected, selected and read(selected) or nil, PoseStore.isRecord(selected))
+	rosterPanel:refresh(entries, selected)
 	if (#plateUpdates &gt; 0 or #identityUpdates &gt; 0 or #pruneUpdates &gt; 0) and not busy and not automaticSyncFailed and not RunService:IsRunning() then
 		-- Idempotent shared writes: generated plates are excluded from name observers.
 		-- Upgrade once per character per load so Undo can restore an older style.
@@ -1718,7 +2183,7 @@ refresh = function()
 end
 
 local function notify(message, isError)
-	if alive then panel:notify(message, isError) end
+	if alive then panel:notify(message, isError); rosterPanel:notify(message, isError) end
 end
 
 -- No yields inside a recording. Attribute and rendered plate undo together.
@@ -1748,17 +2213,18 @@ transaction = function(label, operation)
 	return true
 end
 
-local function change(label, transform, message)
+local function change(label, transform, message, clearPoseName)
 	local target = selected
 	if not isCharacter(target) then notify("Choose a registered character first.", true); return end
 	local state, readError = read(target)
 	if not state then notify(readError, true); return end
 	local nextState, errorMessage = transform(state)
 	if not nextState then notify(errorMessage, true); return end
-	if not Plate.anchor(target) then notify("This character has no BasePart to anchor its plate.", true); return end
+	if not PoseStore.isRecord(target) and not Plate.anchor(target) then notify("This character has no BasePart to anchor its plate.", true); return end
 	if transaction(label, function()
+		if clearPoseName then target:SetAttribute(PoseStore.nameAttribute, nil) end
 		target:SetAttribute(ATTRIBUTE, HttpService:JSONEncode(nextState))
-		Plate.render(target, nextState)
+		if not PoseStore.isRecord(target) then Plate.render(target, nextState) end
 	end) then
 		automaticSyncFailed = false
 		notify(type(message) == "function" and message(state, nextState) or message or label)
@@ -1773,6 +2239,8 @@ local function register()
 	local objects = Selection:Get()
 	if #objects ~= 1 then notify("Select exactly one character Model or BasePart in Workspace.", true); return end
 	local candidate = objects[1]
+	local pending = PoseStore.forId(candidate:GetAttribute(Registry.idAttribute))
+	if pending then selected = pending; scheduleRefresh(); notify("This character is waiting for a pose replacement. Use Pose Change to finish it."); return end
 	local existing = taggedAncestor(candidate)
 	if existing then selected = existing; scheduleRefresh(); notify("This character is already registered."); return end
 	if not candidate:IsDescendantOf(Workspace) or not (candidate:IsA("Model") or candidate:IsA("BasePart")) then
@@ -1781,6 +2249,8 @@ local function register()
 	local canonical, candidateError = Registry.character(candidate)
 	if not canonical then notify(candidateError, true); return end
 	candidate = canonical
+	pending = PoseStore.forId(candidate:GetAttribute(Registry.idAttribute))
+	if pending then selected = pending; scheduleRefresh(); notify("This character is waiting for a pose replacement. Use Pose Change to finish it."); return end
 	existing = taggedAncestor(candidate)
 	if existing then selected = existing; scheduleRefresh(); notify("This character is already registered."); return end
 	if not Plate.anchor(candidate) then notify("The selected model needs at least one BasePart.", true); return end
@@ -1842,10 +2312,12 @@ end
 
 local actions = { register = register }
 actions.choose = function(character)
-	if isCharacter(character) then selected = character; scheduleRefresh() end
+	if isCharacter(character) then selected = character; widget.Enabled = true; scheduleRefresh() end
 end
+actions.openCharacters = function() rosterWidget.Enabled = true end
+actions.poseChange = function() if options.pose then options.pose.begin(selected) end end
 actions.selectModel = function()
-	if isCharacter(selected) then Selection:Set({ selected }) end
+	if isCharacter(selected) and not PoseStore.isRecord(selected) then Selection:Set({ selected }) end
 end
 actions.setMaximum = function(key, maximum)
 	change("Set " .. State.labels[key] .. " maximum", function(state) return State.setMaximum(state, key, maximum) end,
@@ -1854,13 +2326,6 @@ end
 actions.adjustAmount = function(key, amount, direction)
 	change("Adjust " .. State.labels[key], function(state) return State.adjustAmount(state, key, amount, direction) end,
 		function(old, new) return State.labels[key] .. ": " .. old[key].current .. " → " .. new[key].current .. " · " .. new.name end)
-end
-actions.loadDivider = function()
-	local ok, value = pcall(function() return plugin:GetSetting("CampaignLedgerDivider") end)
-	if ok and type(value) == "number" and value == value and math.abs(value) &lt; math.huge then return value end
-end
-actions.saveDivider = function(value)
-	pcall(function() plugin:SetSetting("CampaignLedgerDivider", value) end)
 end
 actions.getHoverOnly = function() return hover:getHoverOnly() end
 actions.toggleHoverOnly = function()
@@ -1885,13 +2350,15 @@ actions.recover = function(manaValue, apValue, allCharacters)
 	local amounts, message = State.recoveryAmounts(manaValue, apValue)
 	if not amounts then notify(message, true); return end
 	local targets = allCharacters and CollectionService:GetTagged(TAG) or { selected }
+	if allCharacters then for _, record in ipairs(PoseStore.records()) do table.insert(targets, record) end end
 	local updates = {}
 	-- Validate every target before writing anything. Roster search never limits recovery.
 	for _, character in ipairs(targets) do
-		if isCharacter(character) and not Registry.registeredAncestor(character.Parent, Workspace) then
+		if isCharacter(character) and not Registry.registeredAncestor(character.Parent, Workspace)
+			and (PoseStore.isRecord(character) or not PoseStore.forId(character:GetAttribute(Registry.idAttribute))) then
 			local state, readError = read(character)
 			if not state then notify(character.Name .. ": " .. readError, true); return end
-			if not Plate.anchor(character) then notify(character.Name .. " has no plate anchor.", true); return end
+			if not PoseStore.isRecord(character) and not Plate.anchor(character) then notify(character.Name .. " has no plate anchor.", true); return end
 			table.insert(updates, { character = character, state = State.recover(state, amounts.mana, amounts.ap) })
 		end
 	end
@@ -1899,7 +2366,7 @@ actions.recover = function(manaValue, apValue, allCharacters)
 	if transaction("Apply mana and action recovery", function()
 		for _, update in ipairs(updates) do
 			update.character:SetAttribute(ATTRIBUTE, HttpService:JSONEncode(update.state))
-			Plate.render(update.character, update.state)
+			if not PoseStore.isRecord(update.character) then Plate.render(update.character, update.state) end
 		end
 	end) then
 		automaticSyncFailed = false
@@ -1915,11 +2382,13 @@ actions.newTurn = function() change("Refill actions", State.newTurn, "Actions re
 actions.restore = function() change("Restore resources", State.restore, "Health, mana and actions restored.") end
 actions.rename = function(name) change("Rename ledger character", function(state) return State.rename(state, name) end, "Character name saved.") end
 actions.toggleAutoName = function()
+	if PoseStore.isRecord(selected) then notify("Finish the pose change before following a model's name.", true); return end
 	change("Change name source", function(state)
 		local result = State.copy(state)
 		result.autoName = state.autoName == false
-		return Names.apply(selected, result)
-	end, function(_, state) return state.autoName and "Name follows the model’s overhead display." or "Manual name enabled." end)
+		if result.autoName then result.name = Names.resolve(selected) end
+		return result
+	end, function(_, state) return state.autoName and "Name follows the model’s overhead display." or "Manual name enabled." end, true)
 end
 actions.togglePlate = function()
 	change("Toggle overhead plate", function(state)
@@ -1933,6 +2402,7 @@ end
 actions.remove = function()
 	local target = selected
 	if not isCharacter(target) then return end
+	if PoseStore.isRecord(target) then notify("Finish or cancel the pose change first. The saved registration is kept.", true); return end
 	if transaction("Remove character from ledger", function()
 		Plate.clear(target)
 		target:SetAttribute(ATTRIBUTE, nil)
@@ -1953,13 +2423,17 @@ if not options.launcher then
  toggle = WorldScope.button(plugin, toolbar, "CampaignLedgerOpen", "Open the D&amp;D character ledger", "", "DM Ledger")
  toggle.ClickableWhenViewportHidden = true
 end
-local widget = WorldScope.widget(plugin, "CampaignLedger.DM.v1.1", DockWidgetPluginGuiInfo.new(
+widget = WorldScope.widget(plugin, "CampaignLedger.DM.v1.1", DockWidgetPluginGuiInfo.new(
 	Enum.InitialDockState.Float, false, true, 410, 760, 330, 480
 ))
 widget.Title = "Campaign Ledger"
 widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 hover = Hover.start(plugin, function(value) if panel then panel:updateHoverOnly(value) end end)
 panel = Panel.new(widget, actions)
+rosterWidget = WorldScope.widget(plugin, "CampaignLedger.Characters.v1", DockWidgetPluginGuiInfo.new(
+	Enum.InitialDockState.Float, false, true, 330, 620, 280, 280))
+rosterWidget.Title = "Characters"
+rosterPanel = RosterPanel.new(rosterWidget, actions)
 panel:updateHoverOnly(hover:getHoverOnly())
 recoverLegacyPlates()
 panel:updateTurn(ReplicatedStorage:GetAttribute(Turn.attribute))
@@ -1987,6 +2461,8 @@ connect(CollectionService:GetInstanceAddedSignal(Plate.tag), scheduleRefresh)
 connect(CollectionService:GetInstanceRemovedSignal(Plate.tag), scheduleRefresh)
 connect(Workspace.DescendantAdded, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
 connect(Workspace.DescendantRemoving, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
+connect(ReplicatedStorage.DescendantAdded, scheduleRefresh)
+connect(ReplicatedStorage.DescendantRemoving, scheduleRefresh)
 connect(ChangeHistoryService.OnUndo, scheduleRefresh)
 connect(ChangeHistoryService.OnRedo, scheduleRefresh)
 local function stopSession()
@@ -1995,7 +2471,9 @@ local function stopSession()
 	for _, connection in ipairs(connections) do connection:Disconnect() end
 	for _, listeners in pairs(observed) do for _, listener in ipairs(listeners) do listener:Disconnect() end end
 	panel:destroy()
+	rosterPanel:destroy()
 	widget.Enabled = false
+	rosterWidget.Enabled = false
 	if toolbar then WorldScope.pauseToolbar(plugin, toolbar) end
 end
 refresh()
@@ -2005,7 +2483,8 @@ if #initialSelection == 1 then
 	scheduleRefresh()
 end
 
-return stopSession, { open = function() if alive then widget.Enabled = true end end }
+return stopSession, { open = function() if alive then widget.Enabled = true end end,
+ openCharacters = function() if alive then rosterWidget.Enabled = true end end }
 end
 return LedgerSession
 
@@ -2030,5 +2509,10 @@ end)
 plugin.Unloading:Connect(function() setupClick:Disconnect(); stopWorldStatus(); setupToolbar:Destroy() end)
 
 local LedgerSession = LedgerSession
-WorldScope.run(plugin, function() return LedgerSession.start(plugin) end)
+local PoseSession = PoseSession
+WorldScope.run(plugin, function()
+ local stopPose, pose = PoseSession.start(plugin)
+ local stopLedger = LedgerSession.start(plugin, { pose = pose })
+ return function() stopLedger(); stopPose() end
+end)
 </ProtectedString><bool name="Disabled">false</bool><token name="RunContext">0</token></Properties></Item></roblox>

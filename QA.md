@@ -2,12 +2,47 @@
 
 ## Automated checks
 
-521 checks pass with the official Luau CLI: 54 combat-state, 23 name-resolver,
-174 combat/layout/placement/dice/turn, 25 identity/ownership, 28 controller/cleanup,
-25 hover-rule, 48 hover-controller, 49 UI workflow/layout, 50 world-isolation/bootstrap
-and 45 combined-suite checks. All four generated plugins compile.
+506 checks pass with the official Luau CLI: 54 combat-state, 25 name-resolver,
+101 combat/layout/placement/dice/turn, 25 identity/ownership, 28 controller/cleanup,
+25 hover-rule, 48 hover-controller, 57 UI workflow/layout, 50 world-isolation/bootstrap,
+48 combined-suite and 45 pose-transfer checks. All four generated plugins compile.
+The obsolete integrated roster-divider checks were replaced by detached combat layout checks.
 The pure modules pass static analysis. Archive integrity and bundle/source matching
 are checked by the build workflow.
+
+## Pose Change and detached roster · 2026-10-25
+
+- Pose Change is available in the player launcher without DM controls. It saves
+  registration outside the old model before removing the model's active tag/plate.
+  Original geometry is never deleted, moved or renamed by the feature.
+- A newly added, locally selected model may transfer automatically after a
+  recognized paste recording or Command/Control-V gesture. Arbitrary shared
+  additions and ordinary selections cannot consume a pending registration.
+  Use selected model provides the fallback for unrecognized paste paths.
+- Occupied replacements require a second explicit confirmation and get an archive
+  of their previous registration. Conflicts and data changes at the write boundary
+  stop the transfer; rollback does not overwrite a newer edit that it never touched.
+- Pending records survive source deletion, window closure, role changes and plugin
+  reload; saving the place preserves them. Deleted originals cannot be cancelled
+  into an empty registration. Failed target rendering/cancellation keeps the snapshot.
+- Character IDs, spent resources, maximums, names and plate settings transfer.
+  A model-level pose-name override preserves names without rewriting the stored
+  registration during a normal transfer. The existing state schema remains version 1.
+- Characters is a separate native dock widget. The DM may resize/dock it independently
+  of the combat ledger. Choosing a roster row opens its combat sheet; ordinary map
+  selection still updates a sheet without automatically opening a closed window.
+- Pending characters stay in the roster. DM combat edits and recovery operate on
+  the snapshot so the replacement receives current values. Removing the ledger row
+  cannot discard unfinished pose data. Saved registrations are not reset by installation.
+- Production-code harnesses cover ownership/conflict checks, deleted sources,
+  manual/automatic paste, explicit occupied replacement and archival, transaction
+  failures, exact saved data/ID transfer, name retention, queued Undo cancellation,
+  reload and DM integration. Constructors cover compact/tall roster, combat,
+  player/DM launcher and pending/empty pose states. Offline renderings were inspected.
+- No new plugin was installed or published, no Script Sync source was updated and
+  no live Studio place was edited. No extra Studio was opened. Real native docking,
+  keyboard/menu paste ordering, undo/save-reopen and simultaneous Team Create behavior
+  remain pending validation; the per-editor guards are not a distributed server lock.
 
 ## Compact heading spacing · 2026-10-24
 

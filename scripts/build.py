@@ -11,8 +11,8 @@ args = parser.parse_args()
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGINS = {
-    "CampaignTools": (["WorldScope", "State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "Panel", "Dice", "DicePanel", "LauncherPanel", "LedgerSession", "DiceSession", "ViewerSession"], "SuiteMain"),
-    "CampaignLedger": (["WorldScope", "State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "Panel", "LedgerSession"], "Main"),
+    "CampaignTools": (["WorldScope", "State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "PoseStore", "PosePanel", "PoseSession", "RosterPanel", "Panel", "Dice", "DicePanel", "LauncherPanel", "LedgerSession", "DiceSession", "ViewerSession"], "SuiteMain"),
+    "CampaignLedger": (["WorldScope", "State", "Names", "Registry", "Theme", "Layout", "Placement", "Turn", "HoverRules", "Hover", "Plate", "PoseStore", "PosePanel", "PoseSession", "RosterPanel", "Panel", "LedgerSession"], "Main"),
     "CampaignD20": (["WorldScope", "Theme", "Dice", "DicePanel", "DiceSession"], "D20Main"),
     "CampaignTurnWatch": (["WorldScope", "Theme", "Turn", "HoverRules", "Hover", "ViewerSession"], "TurnMain"),
 }

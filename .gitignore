@@ -10,6 +10,7 @@ __pycache__/
 .ui-runtime-*.luau
 .scope-runtime-*.luau
 .suite-runtime-*.luau
+.pose-runtime-*.luau
 
 # Credentials and local settings
 .env

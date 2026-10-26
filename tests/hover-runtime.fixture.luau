@@ -31,7 +31,10 @@ local UDim2 = { fromScale = function(x, y) return { x, y } end }
 local core = object("CoreGui", "CoreGui")
 local heartbeat = signal()
 local focused, released = signal(), signal()
-services.CoreGui, services.UserInputService = core, { WindowFocused = focused, WindowFocusReleased = released }
+services.CoreGui, services.UserInputService = core, { WindowFocused = focused, WindowFocusReleased = released, InputBegan = signal() }
+function services.UserInputService:GetFocusedTextBox() return nil end
+function services.UserInputService:IsKeyDown() return false end
+Enum.KeyCode = { V = "V", LeftControl = "LeftControl", RightControl = "RightControl", LeftMeta = "LeftMeta", RightMeta = "RightMeta" }
 function services.UserInputService:GetMouseLocation() return currentPointer end
 local RaycastParams = { new = function() return {} end }
 Enum.RaycastFilterType = { Exclude = "Exclude" }

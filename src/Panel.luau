@@ -16,7 +16,7 @@ local function stack(parent, gap)
 end
 
 function Panel.new(widget, actions)
- local self = setmetatable({ actions = actions, fields = {}, rows = {}, turnButtons = {}, connections = {}, expanded = false }, Panel)
+ local self = setmetatable({ actions = actions, fields = {}, turnButtons = {}, connections = {}, expanded = false }, Panel)
  self.viewport = frame(widget, { Name = "LedgerViewport", BackgroundTransparency = 0,
   BackgroundColor3 = C.shell, Size = UDim2.fromScale(1, 1) })
  self.root = frame(self.viewport, { Name = "CampaignLedger", Size = UDim2.fromScale(1, 1) })
@@ -58,24 +58,12 @@ function Panel.new(widget, actions)
  end
  Theme.label(self.recovery, "Manual recovery · caps at maximum · 0 skips", 13, { TextColor3 = C.muted,
   Position = UDim2.fromOffset(8, 80), Size = UDim2.new(1, -16, 0, 16) })
- self.search = Theme.input(self.root, "Search characters…", { Position = UDim2.fromOffset(12, 140), Size = UDim2.new(1, -24, 0, 28) })
- self.search:GetPropertyChangedSignal("Text"):Connect(function() self:drawRoster() end)
- self.roster = Theme.create("ScrollingFrame", { Name = "CharacterRoster", BackgroundColor3 = C.surface, BorderSizePixel = 0,
-  Position = UDim2.fromOffset(12, 174), Size = UDim2.new(1, -24, 0, 130), CanvasSize = UDim2.new(),
-  AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
-  ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
- Theme.stroke(self.roster, C.edge)
- stack(self.roster, 2)
- self.register = Theme.button(self.root, "+ Register selected model", { Name = "RegisterCharacter", BackgroundColor3 = C.shell, TextColor3 = C.text, TextSize = 14 })
- self.register.Activated:Connect(actions.register)
- self.divider = Theme.create("TextButton", { Name = "RosterDivider", Text = "", AutoButtonColor = false,
-  BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, -24, 0, 12), Selectable = false }, self.root)
- Theme.rule(self.divider, { Position = UDim2.fromOffset(0, 5) })
- frame(self.divider, { BackgroundTransparency = 0, BackgroundColor3 = C.shell,
-  Position = UDim2.new(0.5, -27, 0, 0), Size = UDim2.fromOffset(54, 12) })
- for _, x in ipairs({ -16, -4, 8 }) do
-  Theme.rule(self.divider, { BackgroundColor3 = C.muted, Position = UDim2.new(0.5, x, 0, 4), Size = UDim2.fromOffset(8, 2) })
- end
+ self.navigation = frame(self.root, { Name = "LedgerNavigation", Position = UDim2.fromOffset(12, 140), Size = UDim2.new(1, -24, 0, 28) })
+ Theme.button(self.navigation, "Characters…", { Name = "OpenCharacters", TextSize = 14,
+  Size = UDim2.new(0.5, -4, 1, 0) }).Activated:Connect(actions.openCharacters)
+ self.pose = Theme.button(self.navigation, "Pose Change", { Name = "ChangePose", TextSize = 14,
+  Position = UDim2.new(0.5, 4, 0, 0), Size = UDim2.new(0.5, -4, 1, 0) })
+ self.pose.Activated:Connect(actions.poseChange)
  self.editor = Theme.create("ScrollingFrame", { Name = "CharacterEditor", BackgroundColor3 = C.surface, BorderSizePixel = 0,
   CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
   ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = C.ap }, self.root)
@@ -173,17 +161,9 @@ function Panel.new(widget, actions)
  self.hoverToggle.Activated:Connect(actions.toggleHoverOnly)
  self.footer = Theme.label(self.root, "Type an amount, then Subtract or Add.", 13, { TextColor3 = C.light,
   TextWrapped = true, TextTruncate = Enum.TextTruncate.None, Position = UDim2.new(0, 12, 1, -30), Size = UDim2.new(1, -24, 0, 28) })
- self.split = actions.loadDivider() or Layout.minimumSplit
  local function layout()
-  local height = math.max(480, self.viewport.AbsoluteSize.Y)
-  local extra = self.recoveryOpen and Layout.recoveryHeight or 0
-  local geometry = Layout.geometry(height, self.split + extra, self.recoveryOpen)
-  self.split = geometry.split - extra
-  self.search.Position = UDim2.fromOffset(12, geometry.search)
-  self.roster.Position = UDim2.fromOffset(12, geometry.roster)
-  self.roster.Size = UDim2.new(1, -24, 0, geometry.rosterHeight)
-  self.register.Position, self.register.Size = UDim2.fromOffset(12, geometry.register), UDim2.new(1, -24, 0, 28)
-  self.divider.Position = UDim2.fromOffset(12, geometry.split)
+  local geometry = Layout.combatGeometry(math.max(480, self.viewport.AbsoluteSize.Y), self.recoveryOpen)
+  self.navigation.Position = UDim2.fromOffset(12, geometry.navigation)
   self.editor.Position = UDim2.fromOffset(12, geometry.editor)
   self.editor.Size = UDim2.new(1, -24, 0, geometry.editorHeight)
  end
@@ -194,26 +174,6 @@ function Panel.new(widget, actions)
   self.recoveryToggle.Text = self.recoveryOpen and "− Recovery" or "+ Recovery"
   layout()
  end)
- local dragStartY, dragStartSplit
- local detector = Theme.create("UIDragDetector", { DragStyle = Enum.UIDragDetectorDragStyle.TranslateLine,
-  DragAxis = Vector2.new(0, 1), ResponseStyle = Enum.UIDragDetectorResponseStyle.CustomOffset }, self.divider)
- local function moveDivider(position)
-  if dragStartY then
-   self.split = dragStartSplit + position.Y - dragStartY
-   layout()
-  end
- end
- local function stopDrag()
-  dragStartY, dragStartSplit = nil, nil
-  actions.saveDivider(self.split)
- end
- self.stopDrag = stopDrag
- detector.DragStart:Connect(function(position)
-  dragStartY, dragStartSplit = position.Y, self.split
- end)
- detector.DragContinue:Connect(moveDivider)
- detector.DragEnd:Connect(function(position) moveDivider(position); stopDrag() end)
- table.insert(self.connections, widget.WindowFocusReleased:Connect(stopDrag))
  layout()
  self:refresh({}, nil, nil)
  return self
@@ -234,65 +194,25 @@ function Panel:updateTurn(value)
  end
 end
 function Panel:destroy()
- self.stopDrag()
  for _, connection in ipairs(self.connections) do connection:Disconnect() end
  self.viewport:Destroy()
 end
-function Panel:drawRoster()
- for _, row in ipairs(self.rows) do row:Destroy() end
- self.rows = {}
- local query, shown = string.lower(self.search.Text), 0
- for _, entry in ipairs(self.entries or {}) do
-  local name = entry.state and entry.state.name or entry.character.Name
-  if query == "" or string.find(string.lower(name), query, 1, true) then
-   shown += 1
-   local active = entry.character == self.selected
-   local button = Theme.create("TextButton", { Name = "Character_" .. (entry.id or tostring(shown)), Text = "", BorderSizePixel = 0,
-    BackgroundColor3 = active and C.selection or C.field, BackgroundTransparency = active and 0 or 0.65,
-    AutoButtonColor = false, Size = UDim2.new(1, -5, 0, 42), LayoutOrder = shown, Selectable = true }, self.roster)
-   if active then frame(button, { BackgroundTransparency = 0, BackgroundColor3 = C.accent,
-    Size = UDim2.new(0, 3, 1, 0) }) end
-   Theme.label(button, name, 18, { Font = Theme.display, TextColor3 = C.text,
-    Position = UDim2.fromOffset(10, 1), Size = UDim2.new(1, -42, 0, 24) })
-   if active then Theme.label(button, "›", 24, { TextColor3 = C.text, Font = Theme.bold,
-    Position = UDim2.new(1, -25, 0, 4), Size = UDim2.fromOffset(20, 28), TextXAlignment = Enum.TextXAlignment.Center }) end
-   if entry.state then
-    for index, key in ipairs(State.resources) do
-     local label = key == "ap" and "AP" or State.labels[key]
-     Theme.label(button, label .. " " .. entry.state[key].current, 13, { TextColor3 = active and C.text or C[key],
-      Position = UDim2.new((index - 1) / 3, 10, 0, 23), Size = UDim2.new(1 / 3, -12, 0, 18) })
-    end
-   else
-    Theme.label(button, "Stats need repair", 13, { TextColor3 = C.hp,
-     Position = UDim2.fromOffset(10, 23), Size = UDim2.new(1, -20, 0, 18) })
-   end
-   button.Activated:Connect(function() self.actions.choose(entry.character) end)
-   local function highlight(value) button.BackgroundTransparency = active and 0 or value and 0 or 0.65 end
-   button.MouseEnter:Connect(function() highlight(true) end)
-   button.MouseLeave:Connect(function() highlight(false) end)
-   button.SelectionGained:Connect(function() highlight(true) end)
-   button.SelectionLost:Connect(function() highlight(false) end)
-   table.insert(self.rows, button)
-  end
- end
- if shown == 0 then table.insert(self.rows, Theme.label(self.roster,
-  query == "" and "No characters registered yet." or "No matching characters.", 15,
-  { TextColor3 = C.muted, Size = UDim2.new(1, -5, 0, 38) })) end
-end
-function Panel:refresh(entries, selected, state)
+function Panel:refresh(entries, selected, state, pending)
  local changed = self.selected ~= selected
  self.entries, self.selected = entries, selected
- self:drawRoster()
  local visible = state ~= nil
  Theme.enable(self.recoverSelected, visible)
  self.recoverAll.Text = "Recover all (" .. #entries .. ")"
+ Theme.enable(self.pose, visible)
  self.empty.Visible, self.heading.Visible, self.advancedToggle.Visible = not visible, visible, visible
  self.advanced.Visible = visible and self.expanded
  for _, fields in pairs(self.fields) do fields.row.Visible = visible end
  self.empty.Text = selected and "This character has invalid stats. Use Studio Undo to recover its last valid values."
-  or "Select a model in the map, then click Register selected model. Already registered? Choose it in the roster above."
+  or "Select a registered model in the map, or open Characters to choose or register one."
  if not state then return end
  self.title.Text = state.name
+ self.pose.Text = pending and "Resume pose change" or "Pose Change"
+ Theme.enable(self.autoName, not pending)
  for key, fields in pairs(self.fields) do
   fields.current.Text = tostring(state[key].current)
   fields.summaryMaximum.Text = "/ " .. state[key].maximum

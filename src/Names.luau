@@ -81,7 +81,7 @@ function Names.apply(character, state)
 	if state.autoName == false then return state end
 	-- Return a new view; reading the roster must never overwrite combat state.
 	local result = table.clone(state)
-	result.name = Names.resolve(character)
+	result.name = Names.clean(character:GetAttribute("CampaignLedgerPoseName")) or Names.resolve(character)
 	return result
 end
 

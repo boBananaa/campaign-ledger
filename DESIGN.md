@@ -221,6 +221,9 @@ A single open diamond interrupts the title rule. Major surfaces use fine inset
 edges and square corner marks. No rounded corners, gradients, external textures,
 gold badge or tagline. All motifs are original native GUI primitives.
 
+The following integrated layout is historical; the current separate windows are
+described under Pose Change and detached roster below.
+
 Turn status and Party / Enemy / End controls are fixed above the roster. Recovery
 is a closed-by-default disclosure immediately beneath them, with separate mana/AP
 amounts, selected recovery and an all-registered count. It never switches a turn.
@@ -312,3 +315,27 @@ plate identity key while keeping the established appearance and placement.
 New registrations start full at 100 Health, 125 Mana and 6 AP. Existing version-1
 state loads as-is. Saving a maximum explicitly refills that resource only, using
 the current saved state for all other fields.
+
+## Pose Change and detached roster
+
+Players access Pose Change from the same launcher without enabling DM mode.
+The compact pose panel shows the saved character, resource summary, selected
+replacement, one primary action and a safe cancellation path. A recognized local
+paste plus one newly selected model may finish automatically. An occupied model
+requires explicit confirmation; its previous registration is archived first.
+
+Pending registration lives in an owned ReplicatedStorage folder rather than the
+deleted character. The original retains its data while its active tag/plate are
+detached. The replacement receives the stable ID and latest snapshot, with a new
+plate and a name override for pose prefabs. Only successful completion consumes
+the pending record and clears the old surviving model's ledger attributes.
+Failed operations keep data for recovery; a missing original never causes the
+pending snapshot to be silently discarded. Combat/recovery can edit a pending
+character, so replacement does not revert intervening combat changes.
+
+Characters now owns search, selection and registration in its own resizable native
+dock. Its list fills the available space; the integrated divider is removed.
+The combat window retains turn/recovery controls, character resources, advanced
+settings and a Characters shortcut. Both windows remain closed until explicitly
+opened. Clicking a registered model still selects its combat sheet without opening
+a closed window. All controls reuse the existing square ash/burgundy theme.

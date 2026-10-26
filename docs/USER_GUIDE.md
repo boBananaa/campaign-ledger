@@ -6,8 +6,9 @@
 
 1. Click **Campaign Tools** in the Plugins toolbar to open the launcher. Turn
    **DM controls: On** locally. In the session map, click **Enable D&D in this world**
-   once, then **Open Ledger**. All menus start closed.
-2. Select an existing character Model and click **Register selected model**.
+   once, then **Open Characters**. All menus start closed.
+2. Select an existing character Model and click **Register selected model** in the
+   Characters window. Choose its row to open its combat controls in the ledger.
    Single-part tokens also work. Existing registered characters retain their values.
 3. During battle, enter an amount beside Health, Mana or Actions, then click
    **Subtract** or **Add**. Presets adjust health/mana by 1 or 5, and AP has −1, +1
@@ -16,19 +17,32 @@
    maximums, restore resources, rename, tune plate height, rebuild or unregister.
    Saving a maximum immediately fills that resource to the entered maximum. It
    leaves the other resources alone; Studio Undo restores the previous values.
-5. Drag the **three-mark divider grip** between the roster and editor to give either section more
-   room. The split is bounded so both remain accessible, and is saved locally.
+5. Resize or dock **Characters** independently of the combat ledger. Its list uses
+   the available height; it scrolls only when the entries exceed that space.
 
 Select model now occupies its own padded row below the character name, away from
-both the divider and the scrolling boundary. Long names truncate before overflowing.
-The roster and editor scroll independently. Turn controls and the hover preference
+the scrolling boundary. Long names truncate before overflowing.
+The roster and editor live in separate windows. Turn controls and the hover preference
 stay fixed. At 330 × 640, close Recovery and Character details to see all combat
 controls together; smaller docks need editor scrolling.
 
-Turning **DM controls** off closes Ledger/D20 and removes their content without
+Turning **DM controls** off closes Characters/Ledger/D20 and removes their content without
 stopping the player turn/hover viewer. Enabling DM controls again keeps the menus
 closed until opened from the launcher. The choice is local and remembered for this plugin.
 Closing the launcher leaves the turn notice and hover viewer running.
+
+**Characters…** inside the ledger reopens the roster. Clicking a registered model
+in the map still selects its combat sheet when the ledger is open. Choosing a
+roster row explicitly opens that sheet; selecting models does not pop closed windows open.
+
+## Pose Change
+
+Players and DMs can use **Campaign Tools → Pose Change**, without enabling DM
+controls. Save the registration before deleting a model, then paste a new pose.
+Pending characters remain in the DM roster with **Waiting for replacement**;
+combat edits and recovery still work and carry through to the new pose.
+See the [pose replacement checklist](POSE_CHANGE.md) for automatic transfer,
+confirmation, cancellation and recovery behavior.
 
 Defaults for a new registration are 100 health, 125 mana and 6 AP, all full. These
 defaults apply only to new characters. Updating the plugin preserves existing saved

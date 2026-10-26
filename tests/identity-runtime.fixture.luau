@@ -17,12 +17,14 @@ local function object(kind, name, parent)
  local o = { kind = kind, Name = name, Parent = parent, attrs = {}, tags = {}, signals = {},
   AncestryChanged = signal(), DescendantAdded = signal(), DescendantRemoving = signal() }
  table.insert(objects, o)
+ if kind == "TextLabel" or kind == "TextButton" then o.TextTransparency, o.TextSize, o.RichText = 0, 14, false end
  function o:IsA(class) return self.kind == class or (self.kind == "Workspace" and class == "Model") end
  function o:IsDescendantOf(root) local c = self.Parent; while c do if c == root then return true end; c = c.Parent end; return false end
  function o:GetChildren() local r = {}; for _, c in ipairs(objects) do if c.Parent == self then table.insert(r, c) end end; return r end
  function o:GetDescendants() local r = {}; for _, c in ipairs(objects) do if c:IsDescendantOf(self) then table.insert(r, c) end end; return r end
  function o:FindFirstChild(name, recursive) for _, c in ipairs(recursive and self:GetDescendants() or self:GetChildren()) do if c.Name == name then return c end end end
  function o:FindFirstChildOfClass(class) for _, c in ipairs(self:GetChildren()) do if c:IsA(class) then return c end end end
+ function o:FindFirstChildWhichIsA(class, recursive) for _, c in ipairs(recursive and self:GetDescendants() or self:GetChildren()) do if c:IsA(class) then return c end end end
  function o:GetAttribute(key) return self.attrs[key] end
  function o:GetPropertyChangedSignal(key) if not self.signals[key] then self.signals[key] = signal() end; return self.signals[key] end
  function o:GetAttributeChangedSignal(key) return self:GetPropertyChangedSignal("attr_" .. key) end
@@ -44,7 +46,7 @@ local http = {}
 function http:JSONEncode(state) serial += 1; local key = "state_" .. serial; json[key] = State.copy(state); return key end
 function http:JSONDecode(raw) assert(json[raw], "Bad JSON"); return State.copy(json[raw]) end
 function http:GenerateGUID() uuid += 1; return string.format("00000000-0000-4000-8000-%012d", uuid) end
-local history = { OnUndo = signal(), OnRedo = signal() }
+local history = { OnUndo = signal(), OnRedo = signal(), OnRecordingFinished = signal() }
 function history:TryBeginRecording() return "recording" end
 function history:FinishRecording() end
 local selection = { SelectionChanged = signal(), objects = {} }
@@ -103,6 +105,12 @@ local Panel = { new = function(_, actions)
  captured = actions
  return { refresh = function(_, value) entries = value end, notify = function() end, updateTurn = function() end, updateHoverOnly = function() end, destroy = function() end }
 end }
+local RosterPanel = { new = function()
+ return { refresh = function() end, notify = function() end, destroy = function() end }
+end }
+local PoseStore = { isRecord = function() return false end, forId = function() return nil end,
+ records = function() return {} end, nameAttribute = "CampaignLedgerPoseName" }
+local PoseSession = { start = function() return function() end, { begin = function() end, open = function() end } end }
 local Plate = { name = "CampaignLedgerPlate", tag = "CampaignLedgerGeneratedPlate", styleVersion = 7 }
 -- Renderer is a UI stub; owner resolution and deletion below are copied from production.
 function Plate.anchor(character) return character:FindFirstChild("Head") end

@@ -19,11 +19,12 @@ Run each tests/*.spec.luau using the official Luau CLI, then run
 `python3 scripts/test_hover.py /path/to/luau` and
 `python3 scripts/test_ui.py /path/to/luau` and
 `python3 scripts/test_scope.py /path/to/luau` and
-`python3 scripts/test_suite.py /path/to/luau`. The current set contains
-521 passing checks: 54 resource, 23 name, 174 combat/layout/placement/dice/turn,
+`python3 scripts/test_suite.py /path/to/luau` and
+`python3 scripts/test_pose.py /path/to/luau`. The current set contains
+506 passing checks: 54 resource, 25 name, 101 combat/layout/placement/dice/turn,
 25 identity/ownership, 28 controller/cleanup, 25 hover rules, 48 hover-controller,
-49 UI workflow/layout, 50 world-isolation/bootstrap and 45 combined-suite checks. These include rotated and translated geometry, off-centre heads, compact
-vertical clearance, custom add/subtract amounts, maximum-only edits, divider limits,
+57 UI workflow/layout, 50 world-isolation/bootstrap, 48 combined-suite and 45 pose-transfer checks. Obsolete integrated-divider checks were replaced by the detached combat layout checks. These include rotated and translated geometry, off-centre heads, compact
+vertical clearance, custom add/subtract amounts, maximum-only edits, independent roster sizing,
 selection-button padding, advantage/disadvantage, manual recovery amounts, skipped
 resources, health preservation and hiding inactive turns.
 All four generated plugin sources compile. Pure rule modules pass static analysis.
@@ -38,15 +39,15 @@ fakes. It checks local-only visibility, default and opt-out behavior, same-name
 owners, automatic-name refresh, template replacement, viewport/focus exit,
 preference persistence, shared renderer ownership, takeover and unload cleanup.
 
-The UI harness executes the production Panel, Theme, LauncherPanel and DicePanel constructors,
+The UI harness executes the production Panel, RosterPanel, PosePanel, Theme, LauncherPanel and DicePanel constructors,
 button callbacks and layout functions with engine fakes. It covers compact sizing,
-resizing/divider limits, recovery scope, same-name selection, input preservation,
+independent resizing, recovery scope, same-name selection, input preservation,
 Enter-to-save/roll, zero maxima and four-digit values, dice result bounds and cleanup.
 It does not model engine text metrics, native input routing or CoreGui layering.
 For a read-only offline preview, run `python3 scripts/test_ui.py /path/to/luau
 --snapshots /tmp/campaign-ui` (on one line), then
 `python3 scripts/preview_ui.py /tmp/campaign-ui`. Open the resulting review.html.
-The companion launcher.html shows player, DM and inactive-world launcher states.
+The companion launcher.html, roster.html and pose.html show their corresponding states.
 Fonts and layout in this preview are approximate; the real Studio check remains required.
 
 Live Studio QA is recorded separately in QA.md. Multi-user replication requires a
@@ -168,7 +169,7 @@ SuiteMain runs one WorldScope lifecycle for the plugin. ViewerSession always sta
 in enabled worlds. LedgerSession/DiceSession start only when the local
 `CampaignToolsDMEnabled` preference is explicitly true; fresh installation defaults
 false. The shared world flag never grants or changes that local role preference.
-Both DM windows still start closed, including when restoring an explicit DM preference.
+All DM windows still start closed, including when restoring an explicit DM preference.
 
 SuiteMain creates exactly one toolbar and button for the plugin lifetime. It opens
 LauncherPanel, which routes player preferences, the local DM role, shared world
@@ -190,3 +191,36 @@ unchanged stats in player mode, DM toggles, preference persistence, a single poi
 surface, one toolbar button in both roles, launcher settings/actions, closed menus,
 world/export gating, cached native IDs and complete unload. Native combined
 plugin installation and a multi-user check remain separate validation steps.
+
+## Pose storage and independent roster
+
+PoseStore owns pending registrations under the owned ReplicatedStorage folder
+`CampaignToolsPoseChanges`. Each record has a saved place ID, editor user ID,
+stable character ID, exact state string, original-state guard and SourceModel
+reference. Starting a transfer saves this record before detaching the source tag
+and generated plate; it does not delete geometry. DM edits use the record's state
+as authority while pending, including selected/all-character recovery.
+
+PoseSession runs alongside the player viewer inside WorldScope, independently of
+DM mode. Its lazy native pose widget remains closed until an explicit action.
+Selection plus recently added instances is insufficient to auto-transfer: it also
+requires a recognized local paste recording or a recent Command/Control-V gesture.
+Unrecognized/native menu ordering falls back to explicit Use selected model.
+Occupied replacements require a second confirmation and get a saved archive before
+replacement. Validation runs again inside the undo recording; precondition failures
+never restore stale data over a newer external edit. Failed writes restore only
+objects this operation actually touched, keeping the pending record.
+
+The original ID and raw state transfer without applying defaults. A model-level
+`CampaignLedgerPoseName` override keeps automatic names stable across differently
+named pose prefabs; explicitly switching name mode clears it. State schema remains
+version 1. Generated content is scrubbed only inside the selected replacement, so
+copied stale owner references cannot delete a different model's plate.
+
+RosterPanel owns search/rows/registration in its own cached native widget; Panel
+owns combat/recovery/details. The integrated split/drag preference is no longer
+used. Choosing a row explicitly opens combat controls, but SelectionChanged only
+updates selection and never forces a closed window open. SuiteMain retains one
+toolbar button. World/role teardown clears both DM surfaces; pending data persists.
+Snapshots and archives are world content and require place backups; Script Sync
+and GitHub checkpoints do not back up their live character data.

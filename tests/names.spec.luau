@@ -109,4 +109,9 @@ check(calls == 1, "own plate additions excluded")
 observer:Disconnect()
 nameLabel:GetPropertyChangedSignal("Text"):Fire()
 check(calls == 1, "observer cleanup")
+local poseState=State.default("Stored name")
+character.attributes.CampaignLedgerPoseName="Preserved character"
+check(Names.apply(character,poseState).name=="Preserved character","pose name overrides a replacement prefab name without rewriting state")
+poseState.autoName=false;poseState.name="Manual character"
+check(Names.apply(character,poseState).name=="Manual character","manual names retain priority over pose name override")
 print("PASS: " .. count .. " automatic-name checks")

@@ -17,4 +17,9 @@ end)
 plugin.Unloading:Connect(function() setupClick:Disconnect(); stopWorldStatus(); setupToolbar:Destroy() end)
 
 local LedgerSession = require(script.Parent.LedgerSession)
-WorldScope.run(plugin, function() return LedgerSession.start(plugin) end)
+local PoseSession = require(script.Parent.PoseSession)
+WorldScope.run(plugin, function()
+ local stopPose, pose = PoseSession.start(plugin)
+ local stopLedger = LedgerSession.start(plugin, { pose = pose })
+ return function() stopLedger(); stopPose() end
+end)

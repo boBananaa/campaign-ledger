@@ -13,6 +13,8 @@ local State = require(script.Parent.State)
 local Names = require(script.Parent.Names)
 local Plate = require(script.Parent.Plate)
 local Panel = require(script.Parent.Panel)
+local RosterPanel = require(script.Parent.RosterPanel)
+local PoseStore = require(script.Parent.PoseStore)
 local Turn = require(script.Parent.Turn)
 local Hover = require(script.Parent.Hover)
 local hover
@@ -21,7 +23,7 @@ local registry = Registry.new(function() return HttpService:GenerateGUID(false) 
 
 local TAG = "CampaignLedgerCharacter"
 local ATTRIBUTE = "CampaignLedgerState"
-local selected, panel
+local selected, panel, rosterPanel, widget, rosterWidget
 local alive, queued, busy = true, false, false
 local automaticSyncFailed = false
 local connections, observed, styled = {}, {}, {}
@@ -43,7 +45,7 @@ local function read(character)
 end
 
 local function isCharacter(character)
-	return character and character:IsDescendantOf(Workspace) and CollectionService:HasTag(character, TAG)
+	return PoseStore.isRecord(character) or character and character:IsDescendantOf(Workspace) and CollectionService:HasTag(character, TAG)
 end
 
 local refresh, transaction
@@ -60,7 +62,8 @@ refresh = function()
 	local entries, present, plateUpdates, pruneUpdates = {}, {}, {}, {}
 	local characters = {}
 	for _, character in ipairs(CollectionService:GetTagged(TAG)) do
-		if character:IsDescendantOf(Workspace) and not Registry.registeredAncestor(character.Parent, Workspace) then
+		if character:IsDescendantOf(Workspace) and not Registry.registeredAncestor(character.Parent, Workspace)
+			and not PoseStore.forId(character:GetAttribute(Registry.idAttribute)) then
 			table.insert(characters, character)
 		end
 	end
@@ -83,6 +86,7 @@ refresh = function()
 				observed[character] = {
 					character:GetAttributeChangedSignal(ATTRIBUTE):Connect(scheduleRefresh),
 					character:GetAttributeChangedSignal(Registry.idAttribute):Connect(scheduleRefresh),
+					character:GetAttributeChangedSignal(PoseStore.nameAttribute):Connect(scheduleRefresh),
 					character:GetPropertyChangedSignal("Name"):Connect(scheduleRefresh),
 					character.AncestryChanged:Connect(scheduleRefresh),
 					Names.observe(character, scheduleRefresh),
@@ -95,14 +99,24 @@ refresh = function()
 			observed[character] = nil
 		end
 	end
+	for _, record in ipairs(PoseStore.records()) do
+		present[record] = true
+		table.insert(entries, { character = record, state = PoseStore.read(record), id = record:GetAttribute(Registry.idAttribute), pending = true })
+		if not observed[record] then observed[record] = {
+			record:GetAttributeChangedSignal(ATTRIBUTE):Connect(scheduleRefresh),
+			record:GetAttributeChangedSignal(PoseStore.nameAttribute):Connect(scheduleRefresh),
+			record.AncestryChanged:Connect(scheduleRefresh),
+		} end
+	end
 	if not present[selected] then selected = nil end
 	table.sort(entries, function(a, b)
 		local aName = a.state and a.state.name or a.character.Name
 		local bName = b.state and b.state.name or b.character.Name
-		if string.lower(aName) == string.lower(bName) then return a.id < b.id end
+		if string.lower(aName) == string.lower(bName) then return (a.pending and a.character.Name or a.id) < (b.pending and b.character.Name or b.id) end
 		return string.lower(aName) < string.lower(bName)
 	end)
-	panel:refresh(entries, selected, selected and read(selected) or nil)
+	panel:refresh(entries, selected, selected and read(selected) or nil, PoseStore.isRecord(selected))
+	rosterPanel:refresh(entries, selected)
 	if (#plateUpdates > 0 or #identityUpdates > 0 or #pruneUpdates > 0) and not busy and not automaticSyncFailed and not RunService:IsRunning() then
 		-- Idempotent shared writes: generated plates are excluded from name observers.
 		-- Upgrade once per character per load so Undo can restore an older style.
@@ -133,7 +147,7 @@ refresh = function()
 end
 
 local function notify(message, isError)
-	if alive then panel:notify(message, isError) end
+	if alive then panel:notify(message, isError); rosterPanel:notify(message, isError) end
 end
 
 -- No yields inside a recording. Attribute and rendered plate undo together.
@@ -163,17 +177,18 @@ transaction = function(label, operation)
 	return true
 end
 
-local function change(label, transform, message)
+local function change(label, transform, message, clearPoseName)
 	local target = selected
 	if not isCharacter(target) then notify("Choose a registered character first.", true); return end
 	local state, readError = read(target)
 	if not state then notify(readError, true); return end
 	local nextState, errorMessage = transform(state)
 	if not nextState then notify(errorMessage, true); return end
-	if not Plate.anchor(target) then notify("This character has no BasePart to anchor its plate.", true); return end
+	if not PoseStore.isRecord(target) and not Plate.anchor(target) then notify("This character has no BasePart to anchor its plate.", true); return end
 	if transaction(label, function()
+		if clearPoseName then target:SetAttribute(PoseStore.nameAttribute, nil) end
 		target:SetAttribute(ATTRIBUTE, HttpService:JSONEncode(nextState))
-		Plate.render(target, nextState)
+		if not PoseStore.isRecord(target) then Plate.render(target, nextState) end
 	end) then
 		automaticSyncFailed = false
 		notify(type(message) == "function" and message(state, nextState) or message or label)
@@ -188,6 +203,8 @@ local function register()
 	local objects = Selection:Get()
 	if #objects ~= 1 then notify("Select exactly one character Model or BasePart in Workspace.", true); return end
 	local candidate = objects[1]
+	local pending = PoseStore.forId(candidate:GetAttribute(Registry.idAttribute))
+	if pending then selected = pending; scheduleRefresh(); notify("This character is waiting for a pose replacement. Use Pose Change to finish it."); return end
 	local existing = taggedAncestor(candidate)
 	if existing then selected = existing; scheduleRefresh(); notify("This character is already registered."); return end
 	if not candidate:IsDescendantOf(Workspace) or not (candidate:IsA("Model") or candidate:IsA("BasePart")) then
@@ -196,6 +213,8 @@ local function register()
 	local canonical, candidateError = Registry.character(candidate)
 	if not canonical then notify(candidateError, true); return end
 	candidate = canonical
+	pending = PoseStore.forId(candidate:GetAttribute(Registry.idAttribute))
+	if pending then selected = pending; scheduleRefresh(); notify("This character is waiting for a pose replacement. Use Pose Change to finish it."); return end
 	existing = taggedAncestor(candidate)
 	if existing then selected = existing; scheduleRefresh(); notify("This character is already registered."); return end
 	if not Plate.anchor(candidate) then notify("The selected model needs at least one BasePart.", true); return end
@@ -257,10 +276,12 @@ end
 
 local actions = { register = register }
 actions.choose = function(character)
-	if isCharacter(character) then selected = character; scheduleRefresh() end
+	if isCharacter(character) then selected = character; widget.Enabled = true; scheduleRefresh() end
 end
+actions.openCharacters = function() rosterWidget.Enabled = true end
+actions.poseChange = function() if options.pose then options.pose.begin(selected) end end
 actions.selectModel = function()
-	if isCharacter(selected) then Selection:Set({ selected }) end
+	if isCharacter(selected) and not PoseStore.isRecord(selected) then Selection:Set({ selected }) end
 end
 actions.setMaximum = function(key, maximum)
 	change("Set " .. State.labels[key] .. " maximum", function(state) return State.setMaximum(state, key, maximum) end,
@@ -269,13 +290,6 @@ end
 actions.adjustAmount = function(key, amount, direction)
 	change("Adjust " .. State.labels[key], function(state) return State.adjustAmount(state, key, amount, direction) end,
 		function(old, new) return State.labels[key] .. ": " .. old[key].current .. " → " .. new[key].current .. " · " .. new.name end)
-end
-actions.loadDivider = function()
-	local ok, value = pcall(function() return plugin:GetSetting("CampaignLedgerDivider") end)
-	if ok and type(value) == "number" and value == value and math.abs(value) < math.huge then return value end
-end
-actions.saveDivider = function(value)
-	pcall(function() plugin:SetSetting("CampaignLedgerDivider", value) end)
 end
 actions.getHoverOnly = function() return hover:getHoverOnly() end
 actions.toggleHoverOnly = function()
@@ -300,13 +314,15 @@ actions.recover = function(manaValue, apValue, allCharacters)
 	local amounts, message = State.recoveryAmounts(manaValue, apValue)
 	if not amounts then notify(message, true); return end
 	local targets = allCharacters and CollectionService:GetTagged(TAG) or { selected }
+	if allCharacters then for _, record in ipairs(PoseStore.records()) do table.insert(targets, record) end end
 	local updates = {}
 	-- Validate every target before writing anything. Roster search never limits recovery.
 	for _, character in ipairs(targets) do
-		if isCharacter(character) and not Registry.registeredAncestor(character.Parent, Workspace) then
+		if isCharacter(character) and not Registry.registeredAncestor(character.Parent, Workspace)
+			and (PoseStore.isRecord(character) or not PoseStore.forId(character:GetAttribute(Registry.idAttribute))) then
 			local state, readError = read(character)
 			if not state then notify(character.Name .. ": " .. readError, true); return end
-			if not Plate.anchor(character) then notify(character.Name .. " has no plate anchor.", true); return end
+			if not PoseStore.isRecord(character) and not Plate.anchor(character) then notify(character.Name .. " has no plate anchor.", true); return end
 			table.insert(updates, { character = character, state = State.recover(state, amounts.mana, amounts.ap) })
 		end
 	end
@@ -314,7 +330,7 @@ actions.recover = function(manaValue, apValue, allCharacters)
 	if transaction("Apply mana and action recovery", function()
 		for _, update in ipairs(updates) do
 			update.character:SetAttribute(ATTRIBUTE, HttpService:JSONEncode(update.state))
-			Plate.render(update.character, update.state)
+			if not PoseStore.isRecord(update.character) then Plate.render(update.character, update.state) end
 		end
 	end) then
 		automaticSyncFailed = false
@@ -330,11 +346,13 @@ actions.newTurn = function() change("Refill actions", State.newTurn, "Actions re
 actions.restore = function() change("Restore resources", State.restore, "Health, mana and actions restored.") end
 actions.rename = function(name) change("Rename ledger character", function(state) return State.rename(state, name) end, "Character name saved.") end
 actions.toggleAutoName = function()
+	if PoseStore.isRecord(selected) then notify("Finish the pose change before following a model's name.", true); return end
 	change("Change name source", function(state)
 		local result = State.copy(state)
 		result.autoName = state.autoName == false
-		return Names.apply(selected, result)
-	end, function(_, state) return state.autoName and "Name follows the model’s overhead display." or "Manual name enabled." end)
+		if result.autoName then result.name = Names.resolve(selected) end
+		return result
+	end, function(_, state) return state.autoName and "Name follows the model’s overhead display." or "Manual name enabled." end, true)
 end
 actions.togglePlate = function()
 	change("Toggle overhead plate", function(state)
@@ -348,6 +366,7 @@ end
 actions.remove = function()
 	local target = selected
 	if not isCharacter(target) then return end
+	if PoseStore.isRecord(target) then notify("Finish or cancel the pose change first. The saved registration is kept.", true); return end
 	if transaction("Remove character from ledger", function()
 		Plate.clear(target)
 		target:SetAttribute(ATTRIBUTE, nil)
@@ -368,13 +387,17 @@ if not options.launcher then
  toggle = WorldScope.button(plugin, toolbar, "CampaignLedgerOpen", "Open the D&D character ledger", "", "DM Ledger")
  toggle.ClickableWhenViewportHidden = true
 end
-local widget = WorldScope.widget(plugin, "CampaignLedger.DM.v1.1", DockWidgetPluginGuiInfo.new(
+widget = WorldScope.widget(plugin, "CampaignLedger.DM.v1.1", DockWidgetPluginGuiInfo.new(
 	Enum.InitialDockState.Float, false, true, 410, 760, 330, 480
 ))
 widget.Title = "Campaign Ledger"
 widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 hover = Hover.start(plugin, function(value) if panel then panel:updateHoverOnly(value) end end)
 panel = Panel.new(widget, actions)
+rosterWidget = WorldScope.widget(plugin, "CampaignLedger.Characters.v1", DockWidgetPluginGuiInfo.new(
+	Enum.InitialDockState.Float, false, true, 330, 620, 280, 280))
+rosterWidget.Title = "Characters"
+rosterPanel = RosterPanel.new(rosterWidget, actions)
 panel:updateHoverOnly(hover:getHoverOnly())
 recoverLegacyPlates()
 panel:updateTurn(ReplicatedStorage:GetAttribute(Turn.attribute))
@@ -402,6 +425,8 @@ connect(CollectionService:GetInstanceAddedSignal(Plate.tag), scheduleRefresh)
 connect(CollectionService:GetInstanceRemovedSignal(Plate.tag), scheduleRefresh)
 connect(Workspace.DescendantAdded, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
 connect(Workspace.DescendantRemoving, function(object) if CollectionService:HasTag(object, TAG) then scheduleRefresh() end end)
+connect(ReplicatedStorage.DescendantAdded, scheduleRefresh)
+connect(ReplicatedStorage.DescendantRemoving, scheduleRefresh)
 connect(ChangeHistoryService.OnUndo, scheduleRefresh)
 connect(ChangeHistoryService.OnRedo, scheduleRefresh)
 local function stopSession()
@@ -410,7 +435,9 @@ local function stopSession()
 	for _, connection in ipairs(connections) do connection:Disconnect() end
 	for _, listeners in pairs(observed) do for _, listener in ipairs(listeners) do listener:Disconnect() end end
 	panel:destroy()
+	rosterPanel:destroy()
 	widget.Enabled = false
+	rosterWidget.Enabled = false
 	if toolbar then WorldScope.pauseToolbar(plugin, toolbar) end
 end
 refresh()
@@ -420,6 +447,7 @@ if #initialSelection == 1 then
 	scheduleRefresh()
 end
 
-return stopSession, { open = function() if alive then widget.Enabled = true end end }
+return stopSession, { open = function() if alive then widget.Enabled = true end end,
+ openCharacters = function() if alive then rosterWidget.Enabled = true end end }
 end
 return LedgerSession
